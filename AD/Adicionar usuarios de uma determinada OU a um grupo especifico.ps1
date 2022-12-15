@@ -1,0 +1,1 @@
+﻿Get-ADUser -SearchBase ‘OU=COMPLEM,DC=complem,DC=br’ -Filter * | ForEach-Object {Add-ADGroupMember -Identity ‘GGS_AZ_Exchange_AplyRule_Signature’ -Members $_ }
