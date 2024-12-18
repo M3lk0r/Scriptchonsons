@@ -1,3 +1,31 @@
+<#
+.SYNOPSIS
+    Cria grupos no Active Directory a partir de um arquivo CSV e adiciona grupos existentes como membros de outros grupos.
+
+.DESCRIPTION
+    Este script PowerShell importa um arquivo CSV contendo informações sobre grupos e seus respectivos membros no Active Directory. 
+    Ele cria os grupos, caso não existam, e os adiciona a outros grupos, conforme especificado na coluna 'MemberOf' do CSV. 
+    O script também exibe informações de status durante a execução.
+
+.PARAMETER csvPath
+    Caminho para o arquivo CSV contendo os grupos e seus membros.
+
+.PARAMETER ouPath
+    Caminho para a Unidade Organizacional (OU) onde os grupos serão criados no Active Directory.
+
+.EXAMPLE
+    .\AddGroupNGroupMemberof.ps1
+
+.NOTES
+    Autor: Eduardo Augusto Gomes
+    Data: 18/12/2024
+    Versão: 1.0
+        Versão inicial do script.
+
+.LINK
+    https://github.com/M3lk0r/Powershellson
+#>
+
 # Caminho para o arquivo CSV
 $csvPath = "C:\AddGroupNGroupMemberof.csv"
 

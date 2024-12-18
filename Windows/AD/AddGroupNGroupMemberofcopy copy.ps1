@@ -1,3 +1,30 @@
+<#
+.SYNOPSIS
+    Cria estrutura de pastas e configura permissões baseadas nos grupos do Active Directory a partir de um arquivo CSV.
+
+.DESCRIPTION
+    Este script PowerShell importa um arquivo CSV contendo os nomes dos grupos do Active Directory e cria uma estrutura de pastas no servidor de arquivos. 
+    Ele também configura permissões específicas para cada grupo nas pastas criadas, garantindo o acesso adequado de leitura e escrita.
+
+.PARAMETER csvPath
+    Caminho para o arquivo CSV contendo os nomes dos grupos.
+
+.PARAMETER basePath
+    Caminho base onde as pastas serão criadas.
+
+.EXAMPLE
+    .\CreateFolderStructureAndSetPermissions.ps1
+
+.NOTES
+    Autor: Eduardo Augusto Gomes
+    Data: 18/12/2024
+    Versão: 1.0
+        Versão inicial do script.
+
+.LINK
+    https://github.com/M3lk0r/Powershellson
+#>
+
 # Caminho para o arquivo CSV
 $csvPath = "C:\AddGroupNGroupMemberof.csv"
 
