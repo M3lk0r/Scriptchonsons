@@ -1,0 +1,9 @@
+Nome,FQDN,IP
+observium,observium.agripecas.net,172.16.1.18
+zabbix,zabbix.agripecas.net,172.16.1.2
+wazuh-server,wazuh-server.agripecas.net,172.16.1.7
+wazuh-indexer,wazuh-indexer.agripecas.net,172.16.1.134
+wazuh-dashboard,wazuh-dashboard.agripecas.net,172.16.1.8
+netbox,netbox.agripecas.net,172.16.1.6
+proxy,srvagr001012.agripecas.net,172.16.1.12
+zabbix-db,zabbix-db.agripecas.net,172.16.1.3
