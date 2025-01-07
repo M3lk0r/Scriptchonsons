@@ -23,28 +23,24 @@
 .NOTES
     Autor: Eduardo Augusto Gomes
     Data: 18/12/2024
-    Versão: 1.0
+    Versão: 1.1
         Versão inicial do script.
 
 .LINK
     https://github.com/M3lk0r/Powershellson
 #>
 
-# Define as variáveis
 $origem = "C:\\Origem"
 $destino = "C:\\Destino"
 $logDir = "C:\\Logs"
 
-# Criação do diretório de logs, caso não exista
 if (-not (Test-Path -Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir | Out-Null
 }
 
-# Nome do arquivo de log
 $DataHora = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $LogFile = Join-Path -Path $LogDir -ChildPath "Copia_Arquivos_$DataHora.log"
 
-# Função para calcular hash
 function Get-FileHashValue {
     param (
         [string]$FilePath
@@ -52,7 +48,6 @@ function Get-FileHashValue {
     return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash
 }
 
-# Função para registrar logs
 function Log {
     param (
         [string]$Message,
@@ -61,10 +56,8 @@ function Log {
     Add-Content -Path $LogFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
 }
 
-# Início da cópia usando Robocopy
 Log "Início da cópia de arquivos com Robocopy e limitação de tráfego."
 try {
-    # Comando Robocopy com limitação de tráfego
     $cmd = "Robocopy `"$Origem`" `"$Destino`" /E /R:3 /W:5 /LOG+:`"$LogFile`" /IPG:2"
     Log "Executando comando: $cmd"
     Invoke-Expression -Command $cmd
@@ -74,14 +67,18 @@ try {
     exit 1
 }
 
-# Validação de integridade com hash
 Log "Iniciando validação de integridade."
 
 try {
     $arquivosOrigem = Get-ChildItem -Path $Origem -Recurse -File
     foreach ($arquivo in $arquivosOrigem) {
-        $relativoPath = $arquivo.FullName.Substring($Origem.Length)
+        $relativoPath = $arquivo.FullName.Substring($Origem.Length).TrimStart('\')
         $destinoPath = Join-Path -Path $Destino -ChildPath $relativoPath
+
+        $destinoDir = Split-Path -Path $destinoPath -Parent
+        if (-not (Test-Path -Path $destinoDir)) {
+            New-Item -ItemType Directory -Path $destinoDir | Out-Null
+        }
 
         if (Test-Path -Path $destinoPath) {
             $hashOrigem = Get-FileHashValue -FilePath $arquivo.FullName
@@ -91,11 +88,11 @@ try {
                 Log "Arquivo válido no destino: $relativoPath. Nenhuma ação necessária."
             } else {
                 Log "Hash divergente para $relativoPath. Substituindo arquivo."
-                Copy-Item -Path $arquivo.FullName -Destination $destinoPath -Force -ErrorAction Stop
+                Copy-FileWithRetry -SourcePath $arquivo.FullName -DestinationPath $destinoPath
             }
         } else {
             Log "Arquivo não encontrado no destino: $relativoPath. Realizando cópia."
-            Copy-Item -Path $arquivo.FullName -Destination $destinoPath -Force -ErrorAction Stop
+            Copy-FileWithRetry -SourcePath $arquivo.FullName -DestinationPath $destinoPath
         }
     }
     Log "Validação de integridade concluída com sucesso."
