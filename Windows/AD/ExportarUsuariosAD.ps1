@@ -78,3 +78,19 @@ catch {
     Write-Error "Erro ao recuperar usuários do AD: $_"
     exit 1
 }
+
+$DadosUsuarios = $Usuarios | Select-Object `
+    distinguishedName, `
+    cn, `
+    sn, `
+    givenName, `
+    sAMAccountName
+
+try {
+    $DadosUsuarios | Export-Csv -Path $CaminhoCompletoCSV -NoTypeInformation -Encoding UTF8
+    Write-Host "Exportação concluída com sucesso! Arquivo salvo em: $CaminhoCompletoCSV" -ForegroundColor Cyan
+}
+catch {
+    Write-Error "Erro ao exportar para CSV: $_"
+    exit 1
+}
