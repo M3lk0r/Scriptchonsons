@@ -21,8 +21,8 @@
     .\DisableADUsers.ps1 -CsvPath "C:\csv\users2disable.csv" -Delimiter ";" -Encoding "UTF8"
 
 .NOTES
-    Autor: eduardo.agms@outlook.com.br
-    Data: 27/01/2025
+    Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
+    Data: 29/01/2025
     Versão: 1.1
         Força output : UTF-8
     

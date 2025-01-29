@@ -23,8 +23,8 @@
     .\ExportADUsers.ps1 -OU "OU=Users,DC=contoso,DC=local" -OutputFile "C:\export\usuarios_grupos.csv" -UserStatus "Habilitado"
 
 .NOTES
-    Autor: eduardo.agms@outlook.com.br
-    Data: 27/01/2025
+    Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
+    Data: 29/01/2025
     Versão: 2.1
         Força output : UTF-8
 

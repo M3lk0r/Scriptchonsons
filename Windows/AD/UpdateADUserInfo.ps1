@@ -28,8 +28,8 @@
     .\UpdateADUserInfo.ps1 -CsvPath "C:\csv\updategeral.csv" -Delimiter ";" -Encoding "UTF8" -DomainSuffix "@contoso.local" -WebPage "https://www.contoso.local/"
 
 .NOTES
-    Autor: eduardo.agms@outlook.com.br
-    Data: 27/01/2025
+    Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
+    Data: 29/01/2025
     Versão: 1.1
         Força output : UTF-8
     

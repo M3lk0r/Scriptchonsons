@@ -47,16 +47,16 @@
         -WebsiteURL "https://contoso.local" -Country "BR"
 
 .NOTES
-    Autor: eduardo.agms@outlook.com.br
-    Data: 28/01/2025
-    Versão: 2.2
-        Versão aprimorada com parametrização opcional para domínio UPN e configuração de ProxyAddresses.
+    Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
+    Data: 29/01/2025
+    Versão: 3.0
+        Versão aprimorada com validações, logging, suporte a pipeline, splatting e boas práticas do PowerShell 7.4.
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param (
     [Parameter(Mandatory = $true, HelpMessage = "Caminho completo para o arquivo CSV a ser importado.")]
     [string]$CsvPath,
@@ -86,19 +86,35 @@ param (
     [string]$Country = "BR"
 )
 
+# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$logFile = "C:\logs\ADUserCreation.log"
 
+# Função para escrever logs
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp] [$Level] $Message"
+    Add-Content -Path $logFile -Value $logEntry
+}
+
+# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
-        Write-Verbose "Módulo ActiveDirectory importado com sucesso."
+        Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Error "Falha ao importar o módulo ActiveDirectory: $_"
-        exit 1
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
+        throw
     }
 }
 
+# Função para importar o CSV
 function Import-UserCSV {
     param (
         [string]$Path,
@@ -106,19 +122,27 @@ function Import-UserCSV {
         [string]$Encoding
     )
 
+    if (-not (Test-Path -Path $Path)) {
+        Write-Log "Arquivo CSV não encontrado: $Path" -Level "ERROR"
+        throw "Arquivo CSV não encontrado: $Path"
+    }
+
     try {
         $data = Import-Csv -Path $Path -Delimiter $Delimiter -Encoding $Encoding
-        Write-Host "CSV importado com sucesso. Total de usuários a processar: $($data.Count)" -ForegroundColor Green
+        Write-Log "CSV importado com sucesso. Total de usuários a processar: $($data.Count)"
         return $data
     }
     catch {
-        Write-Error "Falha ao importar o CSV: $_"
-        exit 1
+        Write-Log "Falha ao importar o CSV: $_" -Level "ERROR"
+        throw
     }
 }
 
-function Create-Users {
+# Função para criar usuários
+function Add-Users {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
+        [Parameter(ValueFromPipeline = $true)]
         [array]$Users,
         [SecureString]$Password,
         [string]$DomainSuffix,
@@ -126,73 +150,72 @@ function Create-Users {
         [string]$SecondaryEmailDomain
     )
 
-    foreach ($user in $Users) {
-        try {
-            if (-not $user.sAMAccountName) {
-                Write-Error "O campo sAMAccountName está vazio ou não definido. Verifique os dados do usuário."
-                return
-            }
+    process {
+        $totalUsers = $Users.Count
+        $currentUser = 0
 
-            if (-not $user) {
-                Write-Error "O objeto 'user' está vazio ou não definido."
-                return
-            }
-            if (-not $user.PSObject.Properties.Match("sAMAccountName")) {
-                Write-Error "O objeto 'user' não possui a propriedade 'sAMAccountName'."
-                return
-            }
-            $existingUser = Get-ADUser -Filter "SamAccountName -eq '$($user.sAMAccountName)'"
+        foreach ($user in $Users) {
+            $currentUser++
+            $percentComplete = ($currentUser / $totalUsers) * 100
+            Write-Progress -Activity "Criando usuários" -Status "$currentUser de $totalUsers" -PercentComplete $percentComplete
 
-            if ($null -eq $existingUser) {
-            
-                if ($UpnDomain) {
-                    $userUpn = "$($user.sAMAccountName)$UpnDomain"
+            try {
+                if (-not $user.sAMAccountName) {
+                    Write-Log "O campo sAMAccountName está vazio ou não definido. Verifique os dados do usuário." -Level "ERROR"
+                    continue
+                }
+
+                $existingUser = Get-ADUser -Filter "SamAccountName -eq '$($user.sAMAccountName)'" -ErrorAction Stop
+
+                if ($null -eq $existingUser) {
+                    if ($PSCmdlet.ShouldProcess($user.sAMAccountName, "Criar usuário")) {
+                        $userUpn = $UpnDomain ? "$($user.sAMAccountName)$UpnDomain" : "$($user.sAMAccountName)$DomainSuffix"
+
+                        $newUserParams = @{
+                            GivenName              = $user.givenName
+                            Surname                = $user.sn
+                            SamAccountName         = $user.sAMAccountName
+                            DisplayName            = $user.namedisplayNamecn
+                            Name                   = $user.namedisplayNamecn
+                            Description            = $user.titledescription
+                            Department             = $user.Department
+                            Title                  = $user.titledescription
+                            UserPrincipalName      = $userUpn
+                            Path                   = $user.ou
+                            AccountPassword        = $Password
+                            Enabled                = $true
+                            ChangePasswordAtLogon  = $true
+                        }
+
+                        New-ADUser @newUserParams -ErrorAction Stop
+
+                        $proxyAddresses = @("SMTP:$userUpn")
+                        if ($SecondaryEmailDomain) {
+                            $secondaryEmail = "$($user.sAMAccountName)$SecondaryEmailDomain"
+                            $proxyAddresses += "smtp:$secondaryEmail"
+                        }
+
+                        Set-ADUser -Identity $user.sAMAccountName -Replace @{proxyAddresses = $proxyAddresses } -ErrorAction Stop
+
+                        Write-Log "Usuário '$($user.sAMAccountName)' criado com sucesso com ProxyAddresses configurado."
+                    }
                 }
                 else {
-                    $userUpn = "$($user.sAMAccountName)$DomainSuffix"
+                    Write-Log "Usuário '$($user.sAMAccountName)' já existe. Pulando criação." -Level "WARNING"
                 }
-
-                New-ADUser `
-                    -GivenName $user.givenName `
-                    -Surname $user.sn `
-                    -SamAccountName $user.sAMAccountName `
-                    -DisplayName $user.namedisplayNamecn `
-                    -Name $user.namedisplayNamecn `
-                    -Description $user.titledescription `
-                    -Department $user.Department `
-                    -Title $user.titledescription `
-                    -UserPrincipalName $userUpn `
-                    -Path $user.ou `
-                    -AccountPassword $Password `
-                    -Enabled $true `
-                    -ChangePasswordAtLogon $true
-
-                $proxyAddresses = @()
-
-                $proxyAddresses += "SMTP:$userUpn"
-
-                if ($SecondaryEmailDomain) {
-                    $secondaryEmail = "$($user.sAMAccountName)@$SecondaryEmailDomain"
-                    $proxyAddresses += "smtp:$secondaryEmail"
-                }
-
-                Set-ADUser -Identity $user.sAMAccountName -Replace @{proxyAddresses = $proxyAddresses }
-
-                Write-Host "Usuário '$($user.sAMAccountName)' criado com sucesso com ProxyAddresses configurado." -ForegroundColor Cyan
-            
             }
-            else {
-                Write-Host "Usuário '$($user.sAMAccountName)' já existe. Pulando criação." -ForegroundColor Yellow
+            catch {
+                Write-Log "Erro ao criar usuário '$($user.sAMAccountName)': $_" -Level "ERROR"
             }
-        }
-        catch {
-            Write-Warning "Erro ao criar usuário '$($user.sAMAccountName)': $_"
         }
     }
 }
 
+# Função para atualizar usuários
 function Update-Users {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
+        [Parameter(ValueFromPipeline = $true)]
         [array]$Users,
         [string]$WebsiteURL,
         [string]$DomainSuffix,
@@ -201,72 +224,82 @@ function Update-Users {
         [string]$SecondaryEmailDomain
     )
 
-    foreach ($user in $Users) {
-        try {
-            $adUser = Get-ADUser -Identity $user.sAMAccountName -Properties *
+    process {
+        $totalUsers = $Users.Count
+        $currentUser = 0
 
-            if ($adUser) {
-                $setParams = @{
-                    Office        = $user.Office
-                    Surname       = $user.sn
-                    Company       = $user.Company
-                    StreetAddress = $user.StreetAddress
-                    Description   = $user.titledescription
-                    Department    = $user.Department
-                    Title         = $user.titledescription
-                    City          = $user.City
-                    State         = $user.State
-                    Country       = $Country
-                    PostalCode    = $user.postalCode
-                }
+        foreach ($user in $Users) {
+            $currentUser++
+            $percentComplete = ($currentUser / $totalUsers) * 100
+            Write-Progress -Activity "Atualizando usuários" -Status "$currentUser de $totalUsers" -PercentComplete $percentComplete
 
-                $replaceParams = @{
-                    'ipPhone'         = $user.ipPhone
-                    'wWWHomePage'     = $WebsiteURL
-                    'telephoneNumber' = $user.telephoneNumber
-                }
+            try {
+                $adUser = Get-ADUser -Identity $user.sAMAccountName -Properties * -ErrorAction Stop
 
-                if ($UpnDomain) {
-                    $newUpn = "$($user.sAMAccountName)$UpnDomain"
+                if ($adUser) {
+                    if ($PSCmdlet.ShouldProcess($user.sAMAccountName, "Atualizar usuário")) {
+                        $setParams = @{
+                            Office        = $user.Office
+                            Surname       = $user.sn
+                            Company       = $user.Company
+                            StreetAddress = $user.StreetAddress
+                            Description   = $user.titledescription
+                            Department    = $user.Department
+                            Title         = $user.titledescription
+                            City          = $user.City
+                            State         = $user.State
+                            Country       = $Country
+                            PostalCode    = $user.postalCode
+                        }
+
+                        $replaceParams = @{
+                            'ipPhone'         = $user.ipPhone
+                            'wWWHomePage'     = $WebsiteURL
+                            'telephoneNumber' = $user.telephoneNumber
+                        }
+
+                        $userUpn = $UpnDomain ? "$($user.sAMAccountName)$UpnDomain" : "$($user.sAMAccountName)$DomainSuffix"
+                        $setParams['UserPrincipalName'] = $userUpn
+                        $replaceParams['mail'] = $userUpn
+
+                        $proxyAddresses = @("SMTP:$userUpn")
+                        if ($SecondaryEmailDomain) {
+                            $secondaryEmail = "$($user.sAMAccountName)$SecondaryEmailDomain"
+                            $proxyAddresses += "smtp:$secondaryEmail"
+                        }
+                        $replaceParams['proxyAddresses'] = $proxyAddresses
+
+                        Set-ADUser -Identity $adUser @setParams -ErrorAction Stop
+                        Set-ADUser -Identity $adUser -Replace $replaceParams -ErrorAction Stop
+
+                        Write-Log "Usuário '$($user.sAMAccountName)' atualizado com sucesso e ProxyAddresses configurado."
+                    }
                 }
                 else {
-                    $newUpn = "$($user.sAMAccountName)$DomainSuffix"
+                    Write-Log "Usuário '$($user.sAMAccountName)' não encontrado no AD. Pulando atualização." -Level "WARNING"
                 }
-
-                $setParams['UserPrincipalName'] = $newUpn
-
-                $replaceParams['mail'] = $newUpn
-
-                $proxyAddresses = @()
-
-                $proxyAddresses += "SMTP:$newUpn"
-
-                if ($SecondaryEmailDomain) {
-                    $secondaryEmail = "$($user.sAMAccountName)$SecondaryEmailDomain"
-                    $proxyAddresses += "smtp:$secondaryEmail"
-                }
-
-                $replaceParams['proxyAddresses'] = $proxyAddresses
-
-                Set-ADUser -Identity $adUser @setParams
-                Set-ADUser -Identity $adUser -Replace $replaceParams
-
-                Write-Host "Usuário '$($user.sAMAccountName)' atualizado com sucesso e ProxyAddresses configurado." -ForegroundColor Cyan
             }
-            else {
-                Write-Warning "Usuário '$($user.sAMAccountName)' não encontrado no AD. Pulando atualização."
+            catch {
+                Write-Log "Erro ao atualizar usuário '$($user.sAMAccountName)': $_" -Level "ERROR"
             }
-        }
-        catch {
-            Write-Warning "Erro ao atualizar usuário '$($user.sAMAccountName)': $_"
         }
     }
 }
 
-$sAMAccountNames = Import-UserCSV -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
+# Início do script
+try {
+    Write-Log "Iniciando script de criação e atualização de usuários no AD."
 
-$securePassword = ConvertTo-SecureString -String $DefaultPassword -AsPlainText -Force
+    Import-ADModule
+    $users = Import-UserCSV -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
+    $securePassword = ConvertTo-SecureString -String $DefaultPassword -AsPlainText -Force
 
-Create-Users -Users $sAMAccountNames -Password $securePassword -DomainSuffix $DomainSuffix -UpnDomain $UpnDomain -SecondaryEmailDomain $SecondaryEmailDomain
+    $users | Create-Users -Password $securePassword -DomainSuffix $DomainSuffix -UpnDomain $UpnDomain -SecondaryEmailDomain $SecondaryEmailDomain
+    $users | Update-Users -WebsiteURL $WebsiteURL -DomainSuffix $DomainSuffix -Country $Country -UpnDomain $UpnDomain -SecondaryEmailDomain $SecondaryEmailDomain
 
-Update-Users -Users $sAMAccountNames -WebsiteURL $WebsiteURL -DomainSuffix $DomainSuffix -Country $Country -UpnDomain $UpnDomain -SecondaryEmailDomain $SecondaryEmailDomain
+    Write-Log "Script concluído com sucesso."
+}
+catch {
+    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
+    throw
+}
