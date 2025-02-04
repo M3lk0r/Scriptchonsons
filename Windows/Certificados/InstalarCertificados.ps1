@@ -20,11 +20,8 @@
 .NOTES
     Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
     Data: 04/02/2025
-    Versão: 1.1
-        - Alterar forma de busca dos security groups.
-        - Otimização do gerenciamento de erros
+    Versão: 1.2
         - Melhoria no log
-        - Redução do impacto do Write-Progress
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
@@ -50,9 +47,16 @@ function Write-Log {
         [string]$mensagem,
         [string]$tipo = "INFO"
     )
+
     $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$dataHora] [$tipo] $mensagem"
-    Add-Content -Path "$caminhoLogs\certificados.log" -Value $logEntry
+    $logPath = "$caminhoLogs\certificados.log"
+
+    if (-not (Test-Path $logPath)) {
+        [System.IO.File]::WriteAllText($logPath, "`uFEFF", [System.Text.Encoding]::UTF8)
+    }
+
+    $logEntry | Out-File -FilePath $logPath -Encoding UTF8 -Append
 
     switch ($tipo) {
         "INFO" { Write-Host $logEntry -ForegroundColor Green }
