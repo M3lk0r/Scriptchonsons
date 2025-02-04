@@ -1,0 +1,57 @@
+﻿{
+    "CaminhoPadraoCertificados": "C:\\aa\\lixo",
+    "Certificados": [
+        {
+            "Nome": "CERTIFICADO AG CRISTALINA VAL 10.06.25 SENHA Agri@2024.p12",
+            "Senha": "Agri@2024"
+        },
+        {
+            "Nome": "Ag Goiania Val. 19-07-25 senha Agri@24.p12",
+            "Senha": "Agri@24"
+        },
+        {
+            "Nome": "CERTIFICADO AG GTBA VAL 10.06.25 SENHA aGRI@2024.p12",
+            "Senha": "aGRI@2024"
+        },
+        {
+            "Nome": "AG 01 val 12-08-25 senha Agri@24.p12",
+            "Senha": "Agri@24"
+        },
+        {
+            "Nome": "AG 02 val 12-08-25 senha Agri@24.p12",
+            "Senha": "Agri@24"
+        },
+        {
+            "Nome": "AG 03 val 12-08-25 senha Agri@24.p12",
+            "Senha": "Agri@24"
+        },
+        {
+            "Nome": "Agropecuaria Isabel val. 11-06-25 Agri@2024.p12",
+            "Senha": "Agri@2024"
+        },
+        {
+            "Nome": "certificado val. 10.06.25 senha aGRI@2024.p12",
+            "Senha": "aGRI@2024"
+        },
+        {
+            "Nome": "gbs val 20-12-25 Agri@24.p12",
+            "Senha": "Agri@24"
+        },
+        {
+            "Nome": "Gf-Flavia val 24-10-25 senha Gf@123.p12",
+            "Senha": "Gf@123"
+        },
+        {
+            "Nome": "Agri catalão venc 28-01-2026 senha Agri@2025.p12",
+            "Senha": "Agri@2025"
+        },
+        {
+            "Nome": "Agri cristalina venc 28-01-2026 senha Agri@2025.p12",
+            "Senha": "Agri@2025"
+        },
+        {
+            "Nome": "Agri edeia venc 28-01-2026 senha Agri@2025.p12",
+            "Senha": "Agri@2025"
+        }
+    ]
+}

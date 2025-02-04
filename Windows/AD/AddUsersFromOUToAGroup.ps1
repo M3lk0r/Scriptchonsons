@@ -13,13 +13,14 @@
     Nome do grupo ao qual os usuários serão adicionados.
 
 .EXAMPLE
-    .\AddUsersToGroup.ps1 -OU "OU=DAIMO,OU=FILIAIS,DC=complem,DC=br" -Group "Colaboradores DAIMO"
+    .\AddUsersToGroup.ps1 -OU "OU=Users,DC=contoso,DC=local" -Group "Colaboradores Contoso"
 
 .NOTES
-    Autor: Eduardo Augusto Gomes
-    Data: 18/12/2024
-    Versão: 2.0
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.4.
+    Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
+    Data: 04/02/2025
+    Versão: 2.1
+        - Melhoria no log
+        - Ajustes tecnicos
 
 .LINK
     https://github.com/M3lk0r/Powershellson
@@ -34,35 +35,49 @@ param (
     [string]$Group
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\AddUsersToGroup.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
-        [string]$Message,
+        [string]$mensagem,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$dataHora] [$Level] $mensagem"
+
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
+
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
+        "INFO" { Write-Host $logEntry -ForegroundColor Green }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry }
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Função para adicionar usuários de uma OU a um grupo
 function Add-UsersToGroup {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -71,7 +86,6 @@ function Add-UsersToGroup {
     )
 
     try {
-        # Obtém todos os usuários na OU especificada
         $users = Get-ADUser -SearchBase $OU -Filter * -ErrorAction Stop
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
@@ -100,7 +114,6 @@ function Add-UsersToGroup {
     }
 }
 
-# Início do script
 try {
     Write-Log "Iniciando script de adição de usuários ao grupo no AD."
 
@@ -110,6 +123,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
-    throw
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

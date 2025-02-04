@@ -48,9 +48,10 @@
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
-    Data: 29/01/2025
-    Versão: 3.0
-        Versão aprimorada com validações, logging, suporte a pipeline, splatting e boas práticas do PowerShell 7.4.
+    Data: 04/02/2025
+    Versão: 3.1
+        - Melhoria no log
+        - Ajustes tecnicos
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
@@ -86,35 +87,49 @@ param (
     [string]$Country = "BR"
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\ADUserCreation.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
-        [string]$Message,
+        [string]$mensagem,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$dataHora] [$Level] $mensagem"
+
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
+
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
+        "INFO" { Write-Host $logEntry -ForegroundColor Green }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry }
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Função para importar o CSV
 function Import-UserCSV {
     param (
         [string]$Path,
@@ -133,12 +148,11 @@ function Import-UserCSV {
         return $data
     }
     catch {
-        Write-Log "Falha ao importar o CSV: $_" -Level "ERROR"
+        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 }
 
-# Função para criar usuários
 function Add-Users {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -205,13 +219,12 @@ function Add-Users {
                 }
             }
             catch {
-                Write-Log "Erro ao criar usuário '$($user.sAMAccountName)': $_" -Level "ERROR"
+                Write-Log "Erro ao criar usuário '$($user.sAMAccountName)': $($_.Exception.Message)" -Level "ERROR"
             }
         }
     }
 }
 
-# Função para atualizar usuários
 function Update-Users {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -280,13 +293,12 @@ function Update-Users {
                 }
             }
             catch {
-                Write-Log "Erro ao atualizar usuário '$($user.sAMAccountName)': $_" -Level "ERROR"
+                Write-Log "Erro ao atualizar usuário '$($user.sAMAccountName)': $($_.Exception.Message)" -Level "ERROR"
             }
         }
     }
 }
 
-# Início do script
 try {
     Write-Log "Iniciando script de criação e atualização de usuários no AD."
 
@@ -300,6 +312,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
-    throw
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

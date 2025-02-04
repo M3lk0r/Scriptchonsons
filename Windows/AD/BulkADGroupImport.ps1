@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Cria grupos no Active Directory a partir de um arquivo CSV e adiciona grupos existentes como membros de outros grupos.
 
@@ -14,14 +14,14 @@
     Caminho para a Unidade Organizacional (OU) onde os grupos serão criados no Active Directory.
 
 .EXAMPLE
-    .\AddGroupNGroupMemberof.ps1 -CsvPath "C:\AddGroupNGroupMemberof.csv" -OuPath "OU=File Server,OU=Security Groups,DC=agripecas,DC=net"
+    .\BulkADGroupImport.ps1 -CsvPath "C:\BulkADGroupImport.csv" -OuPath "OU=Security Groups,DC=contoso,DC=net"
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
-    Data: 29/01/2025
-    Versão: 2.1
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.5.
-
+    Data: 04/02/2025
+    Versão: 2.2
+        - Melhoria no log
+        - Ajustes tecnicos
 .LINK
     https://github.com/M3lk0r/Powershellson
 #>
@@ -35,46 +35,49 @@ param (
     [string]$OuPath
 )
 
-# Verificação de versão do PowerShell
-if ($PSVersionTable.PSVersion -lt [Version]"7.0") {
-    Write-Host "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -ForegroundColor Red
-    exit 1
-}
-
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$logFile = "C:\logs\AddGroupNGroupMemberof.log"
 
-# Função para escrever logs
+$logFile = "C:\logs\BulkADGroupImport.log"
+
 function Write-Log {
     param (
-        [string]$Message,
+        [string]$mensagem,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    
-    # Exibe na tela
-    Write-Host $logEntry
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$dataHora] [$Level] $mensagem"
 
-    # Salva no arquivo de log
-    Add-Content -Path $logFile -Value $logEntry
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
+
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
+        "INFO" { Write-Host $logEntry -ForegroundColor Green }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry }
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Função para criar grupos e adicionar membros
 function Add-GroupsAndMembers {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -83,12 +86,11 @@ function Add-GroupsAndMembers {
     )
 
     try {
-        # Importar o CSV
         $grupos = Import-Csv -Path $CsvPath -Encoding UTF8
         Write-Log "CSV importado com sucesso. Total de grupos a processar: $($grupos.Count)"
     }
     catch {
-        Write-Log "Falha ao importar o CSV: $_" -Level "ERROR"
+        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -101,13 +103,11 @@ function Add-GroupsAndMembers {
         Write-Progress -Activity "Processando grupos" -Status "$currentGroup de $totalGroups" -PercentComplete $percentComplete
 
         try {
-            # Verificar se as propriedades existem
             if (-not ($grupo.PSObject.Properties.Name -contains 'GroupName') -or -not ($grupo.PSObject.Properties.Name -contains 'MemberOf')) {
                 Write-Log "Erro: As colunas 'GroupName' ou 'MemberOf' não foram encontradas no CSV." -Level "ERROR"
                 continue
             }
 
-            # Criar o grupo se ele não existir
             if (-not (Get-ADGroup -Filter "Name -eq '$($grupo.GroupName)'" -ErrorAction SilentlyContinue)) {
                 if ($PSCmdlet.ShouldProcess($grupo.GroupName, "Criar grupo")) {
                     $newGroupParams = @{
@@ -124,7 +124,6 @@ function Add-GroupsAndMembers {
                 Write-Log "Grupo '$($grupo.GroupName)' já existe." -Level "WARNING"
             }
 
-            # Adicionar o grupo como membro do grupo especificado na coluna 'MemberOf'
             if (Get-ADGroup -Filter "Name -eq '$($grupo.MemberOf)'" -ErrorAction SilentlyContinue) {
                 if ($PSCmdlet.ShouldProcess($grupo.MemberOf, "Adicionar membro '$($grupo.GroupName)'")) {
                     Add-ADGroupMember -Identity $grupo.MemberOf -Members $grupo.GroupName -ErrorAction Stop
@@ -136,12 +135,16 @@ function Add-GroupsAndMembers {
             }
         }
         catch {
-            Write-Log "Erro ao processar o grupo '$($grupo.GroupName)': $_" -Level "ERROR"
+            Write-Log "Erro ao processar o grupo '$($grupo.GroupName)': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }
 
-# Início do script
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+    exit 1
+}
+
 try {
     Write-Log "Iniciando script de criação de grupos e adição de membros no AD."
 
@@ -151,6 +154,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
     throw
 }

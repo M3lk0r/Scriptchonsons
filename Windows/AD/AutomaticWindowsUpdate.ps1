@@ -1,63 +1,182 @@
-# encoding: ascii
-# api: powershell
-# title: Automatic Windows Update
-# description: The script will launch Windows Update on your machine, and display the patches as they are being installed.  Once installed, a result code will be displayed as well. If a reboot is needed, the script will take care of that automatically as well… change this
-# version: 0.1
-# author: JayneticMuffin
-# license: CC0
-# x-poshcode-id: 5669
-# x-archived: 2015-01-09T20:22:09
-# x-published: 2015-01-07T14:45:00
-#
-#
-#Checking for available updates
-Write-Host "  Checking for available updates... Please wait!" -ForegroundColor 'Yellow'
-$UpdateSession = New-Object -ComObject Microsoft.Update.Session
-$SearchResult = $UpdateSession.CreateUpdateSearcher().Search($criteria).Updates | ? {$_.Title -notmatch $skipUpdates}
-$SearchResult = $SearchResult | Sort-Object LastDeploymentChangeTime -Descending
-$totalUpdates = $SearchResult.Count
+<#
+.SYNOPSIS
+    Executa a atualização automática do Windows, verificando e instalando patches disponíveis.
 
-ForEach ($Update in $SearchResult) {
-	If ($totalUpdates -eq $null) { $totalUpdates = 1}
-	# Add Update to Collection 
-	$UpdatesCollection = New-Object -ComObject Microsoft.Update.UpdateColl
-	if ($Update.EulaAccepted -eq 0) { $Update.AcceptEula() }
-	$null = $UpdatesCollection.Add($Update)
-	
-	# Download
-	$fileSize = "{0:N0} MB" -f ($($Update.MaxDownloadSize) / 1MB)
-	Write-Host "  Downloading ($($counter.ToString("00"))/$($totalUpdates.ToString("00"))) - $fileSize - " -ForegroundColor 'Yellow' -NoNewline
-	$counter++
-	Write-Host "$($Update.Title)" -ForegroundColor 'White'
-	$UpdatesDownloader = $UpdateSession.CreateUpdateDownloader()
-	$UpdatesDownloader.Updates = $UpdatesCollection
-	$UpdatesDownloader.Priority = 3
+.DESCRIPTION
+    O script verifica a origem das atualizações (Microsoft Update ou WSUS), faz o download e instala as atualizações disponíveis.
+    Ele também registra logs das operações realizadas.
 
-	Write-Host "`t- Download " -NoNewline -ForegroundColor 'White'
-	$DownloadResult = $UpdatesDownloader.Download()
-	Switch ($DownloadResult.ResultCode) {
-		0   { Write-Host "Not Started" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		1   { Write-Host "In Progress" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		2   { Write-Host "Succeeded" -ForegroundColor 'Green' }
-		3   { Write-Host "Succeeded (with Errors)" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		4   { Write-Host "Failed" -ForegroundColor 'White' -BackgroundColor 'Red' }
-		5   { Write-Host "Aborted" -ForegroundColor 'White' -BackgroundColor 'Red' }
-	}
+.EXAMPLE
+    .\AutomaticWindowsUpdate.ps1
 
-	# Install
-	$UpdatesInstaller = $UpdateSession.CreateUpdateInstaller()
-	$UpdatesInstaller.Updates = $UpdatesCollection
+.NOTES
+    Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
+    Data: 04/02/2025
+    Versão: 2.1
+        - Adicionado log da origem das atualizações (WSUS ou Microsoft Update)
+        - Melhorias na exibição e organização do código
 
-	Write-Host "`t- Install  " -NoNewline -ForegroundColor 'White'
-	$InstallResult = $UpdatesInstaller.Install()
-	Switch ($installResult.ResultCode) {
-		0   { Write-Host "Not Started" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		1   { Write-Host "In Progress" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		2   { Write-Host "Succeeded" -ForegroundColor 'Green' }
-		3   { Write-Host "Succeeded (with Errors)" -ForegroundColor 'Black' -BackgroundColor 'Yellow' }
-		4   { Write-Host "Failed" -ForegroundColor 'White' -BackgroundColor 'Red' }
-		5   { Write-Host "Aborted" -ForegroundColor 'White' -BackgroundColor 'Red' }
-	}
-	# Change the line below if you don't want to automatically reboot...
-	If ($installResult.rebootRequired -eq 'True') { $needsReboot = $true }
+.LINK
+    https://github.com/M3lk0r/Powershellson
+#>
+
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "This script requires administrative privileges. Please run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$logFile = "C:\logs\WindowsUpdate.log"
+
+function Write-Log {
+    param (
+        [string]$mensagem,
+        [string]$Level = "INFO"
+    )
+
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$dataHora] [$Level] $mensagem"
+
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
+
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
+        "INFO" { Write-Host $logEntry -ForegroundColor Green }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry }
+    }
+}
+
+function Install-BurntToast {
+    if (-not (Get-Module -ListAvailable -Name BurntToast)) {
+        Write-Log "Installing BurntToast module..." -Level "INFO"
+        Install-Module -Name BurntToast -Force -Scope CurrentUser
+    }
+    Import-Module -Name BurntToast
+}
+
+function Send-Notification {
+    param (
+        [string]$Message
+    )
+    try {
+        New-BurntToastNotification -Text "Windows Update", $Message -AppLogo "$env:SystemRoot\System32\SHELL32.dll" -Silent
+        Write-Log "Notification sent: $Message" -Level "INFO"
+    }
+    catch {
+        Write-Log "Failed to send notification: $($_.Exception.Message)" -Level "ERROR"
+    }
+}
+
+function Get-WindowsUpdates {
+    try {
+        Write-Log "Checking for available updates... Please wait!" -Level "INFO"
+        $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+        $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
+        $SearchResult = $UpdateSearcher.Search("IsInstalled=0").Updates
+        return $SearchResult
+    }
+    catch {
+        Write-Log "Failed to check for updates: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+function Download-Updates {
+    param (
+        [array]$Updates
+    )
+    try {
+        $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+        $UpdatesDownloader = $UpdateSession.CreateUpdateDownloader()
+        $UpdatesDownloader.Updates = $Updates
+        $UpdatesDownloader.Priority = 3
+
+        Write-Log "Downloading updates..." -Level "INFO"
+        $DownloadResult = $UpdatesDownloader.Download()
+
+        switch ($DownloadResult.ResultCode) {
+            0 { Write-Log "Download not started." -Level "WARNING" }
+            1 { Write-Log "Download in progress." -Level "INFO" }
+            2 { Write-Log "Download succeeded." -Level "INFO" }
+            3 { Write-Log "Download succeeded with errors." -Level "WARNING" }
+            4 { Write-Log "Download failed." -Level "ERROR" }
+            5 { Write-Log "Download aborted." -Level "ERROR" }
+        }
+    }
+    catch {
+        Write-Log "Failed to download updates: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+function Install-Updates {
+    param (
+        [array]$Updates
+    )
+    try {
+        $UpdateSession = New-Object -ComObject Microsoft.Update.Session
+        $UpdatesInstaller = $UpdateSession.CreateUpdateInstaller()
+        $UpdatesInstaller.Updates = $Updates
+
+        Write-Log "Installing updates..." -Level "INFO"
+        $InstallResult = $UpdatesInstaller.Install()
+
+        switch ($InstallResult.ResultCode) {
+            0 { Write-Log "Installation not started." -Level "WARNING" }
+            1 { Write-Log "Installation in progress." -Level "INFO" }
+            2 { Write-Log "Installation succeeded." -Level "INFO" }
+            3 { Write-Log "Installation succeeded with errors." -Level "WARNING" }
+            4 { Write-Log "Installation failed." -Level "ERROR" }
+            5 { Write-Log "Installation aborted." -Level "ERROR" }
+        }
+
+        return $InstallResult.RebootRequired
+    }
+    catch {
+        Write-Log "Failed to install updates: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+try {
+    Install-BurntToast
+
+    $updates = Get-WindowsUpdates
+    if ($updates.Count -eq 0) {
+        Write-Log "No updates available." -Level "INFO"
+        exit 0
+    }
+
+    Write-Log "Found $($updates.Count) updates:" -Level "INFO"
+    $updates | ForEach-Object { Write-Log "- $($_.Title)" -Level "INFO" }
+
+    Download-Updates -Updates $updates
+
+    $needsReboot = Install-Updates -Updates $updates
+
+    if ($needsReboot) {
+        Write-Log "A reboot is required to complete the installation." -Level "INFO"
+        Send-Notification -Message "The system will reboot in 5 minutes to complete updates. Save your work!"
+        Start-Sleep -Seconds 300
+        Write-Log "Rebooting the system..." -Level "INFO"
+        Restart-Computer -Force
+    }
+    else {
+        Write-Log "No reboot required. All updates installed successfully." -Level "INFO"
+    }
+}
+catch {
+    Write-Log "An unexpected error occurred: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

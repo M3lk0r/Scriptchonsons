@@ -20,13 +20,15 @@
 .NOTES
     Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
     Data: 04/02/2025
-    Versão: 1.2
+    Versão: 1.3
         - Melhoria no log
+        - Ajustes tecnicos
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
 #>
 
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param (
     [Parameter(Mandatory = $true)]
     [string]$GrupoCertificados,
@@ -35,38 +37,39 @@ param (
     [string]$CaminhoJson
 )
 
-if ($PSVersionTable.PSVersion.Major -lt 5) {
-    Write-Log "Este script requer PowerShell 5 ou superior." -tipo "ERRO"
-    exit
-}
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$caminhoLogs = "C:\logs\"
+$logFile = "C:\logs\InstalarCertificados.log"
 
 function Write-Log {
     param (
         [string]$mensagem,
-        [string]$tipo = "INFO"
+        [string]$Level = "INFO"
     )
 
     $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$tipo] $mensagem"
-    $logPath = "$caminhoLogs\certificados.log"
+    $logEntry = "[$dataHora] [$Level] $mensagem"
 
-    if (-not (Test-Path $logPath)) {
-        [System.IO.File]::WriteAllText($logPath, "`uFEFF", [System.Text.Encoding]::UTF8)
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
 
-    $logEntry | Out-File -FilePath $logPath -Encoding UTF8 -Append
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
 
-    switch ($tipo) {
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
         "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERRO" { Write-Host $logEntry -ForegroundColor Red }
-        "AVISO" { Write-Host $logEntry -ForegroundColor Yellow }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
         default { Write-Host $logEntry }
     }
 }
 
-function Import-Certificados {
+function Import-Certificate {
     param (
         [string]$usuario,
         [string]$caminhoPadraoCertificados,
@@ -88,7 +91,7 @@ function Import-Certificados {
         $caminhoCertificado = "$caminhoPadraoCertificados\$($certificado.Nome)"
         
         if (-not (Test-Path -Path $caminhoCertificado)) {
-            Write-Log "Certificado $($certificado.Nome) não encontrado no caminho: $caminhoCertificado." -tipo "AVISO"
+            Write-Log "Certificado $($certificado.Nome) não encontrado no caminho: $caminhoCertificado." -Level "WARNING"
             continue
         }
 
@@ -108,14 +111,14 @@ function Import-Certificados {
             Write-Log "Certificado $($certificado.Nome) instalado com sucesso para o usuário $usuario."
         }
         catch {
-            Write-Log "Erro ao instalar o certificado $($certificado.Nome): $($_.Exception.Message)" -tipo "ERRO"
+            Write-Log "Erro ao instalar o certificado $($certificado.Nome): $($_.Exception.Message)" -Level "ERROR"
         }
     }
     
     Write-Progress -Activity "Instalando Certificados" -Completed
 }
 
-function Clear-CertificadosExpirados {
+function Clear-ExpiredCertificates {
     param (
         [string]$usuario
     )
@@ -131,42 +134,46 @@ function Clear-CertificadosExpirados {
         $store.Close()
     }
     catch {
-        Write-Log "Erro ao remover certificados expirados: $($_.Exception.Message)" -tipo "ERRO"
+        Write-Log "Erro ao remover certificados expirados: $($_.Exception.Message)" -Level "ERROR"
     }
 }
 
-if (-not (Test-Path -Path $caminhoLogs)) {
-    New-Item -ItemType Directory -Path $caminhoLogs | Out-Null
-    Write-Log "Diretório de logs criado: $caminhoLogs."
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Log "Este script requer PowerShell 5.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+    exit
 }
 
-$user = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$usuarioSam = $user.Name.Split("\")[-1]
+try {
+    $user = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $usuarioSam = $user.Name.Split("\")[-1]
 
-$groupObj = [ADSI]"WinNT://$env:USERDOMAIN/$GrupoCertificados,group"
-$members = @($groupObj.Invoke("Members")) | ForEach-Object { $_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null) }
+    $groupObj = [ADSI]"WinNT://$env:USERDOMAIN/$GrupoCertificados,group"
+    $members = @($groupObj.Invoke("Members")) | ForEach-Object { $_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null) }
 
-$isMember = $members -contains $usuarioSam
+    $isMember = $members -contains $usuarioSam
+    if ($isMember) {
+        Write-Log "usuario $($user.Name) pertence ao grupo $GrupoCertificados. Iniciando instalação de certificados."
 
+        try {
+            $jsonContent = Get-Content -Path $CaminhoJson -Raw | ConvertFrom-Json
+            $caminhoPadraoCertificados = $jsonContent.CaminhoPadraoCertificados
+            $certificados = $jsonContent.Certificados
+            Write-Log "Arquivo JSON carregado com sucesso. Caminho padrão: $caminhoPadraoCertificados."
+        }
+        catch {
+            Write-Log "Erro ao carregar o arquivo JSON: $($_.Exception.Message)" -Level "ERROR"
+            exit
+        }
 
-if ($isMember) {
-    Write-Log "usuario $($user.Name) pertence ao grupo $GrupoCertificados. Iniciando instalação de certificados."
+        Import-Certificate -usuario $user.Name -caminhoPadraoCertificados $caminhoPadraoCertificados -certificados $certificados
 
-    try {
-        $jsonContent = Get-Content -Path $CaminhoJson -Raw | ConvertFrom-Json
-        $caminhoPadraoCertificados = $jsonContent.CaminhoPadraoCertificados
-        $certificados = $jsonContent.Certificados
-        Write-Log "Arquivo JSON carregado com sucesso. Caminho padrão: $caminhoPadraoCertificados."
+        Clear-ExpiredCertificates -usuario $user.Name
     }
-    catch {
-        Write-Log "Erro ao carregar o arquivo JSON: $($_.Exception.Message)" -tipo "ERRO"
-        exit
+    else {
+        Write-Log "usuario $($user.Name) não pertence ao grupo $GrupoCertificados. Nenhum certificado será instalado." -Level "WARNING"
     }
-
-    Import-Certificados -usuario $user.Name -caminhoPadraoCertificados $caminhoPadraoCertificados -certificados $certificados
-
-    Clear-CertificadosExpirados -usuario $user.Name
 }
-else {
-    Write-Log "usuario $($user.Name) não pertence ao grupo $GrupoCertificados. Nenhum certificado será instalado." -tipo "AVISO"
+catch {
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    throw
 }

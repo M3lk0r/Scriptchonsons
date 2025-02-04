@@ -16,7 +16,7 @@
     Codificação do arquivo CSV. Padrão: "Default"
 
 .EXAMPLE
-    .\Update-PasswordPolicy.ps1 -CsvPath "C:\Users\adm.gomes\Desktop\passwordnerver.csv" -Delimiter ";" -Encoding "Default"
+    .\UpdatePasswordPolicy.ps1 -CsvPath "C:\Users\adm.gomes\Desktop\passwordnerver.csv" -Delimiter ";" -Encoding "Default"
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
@@ -93,7 +93,7 @@ function Import-UserCSV {
 }
 
 # Função para atualizar a política de senha dos usuários
-function Update-PasswordPolicy {
+function UpdatePasswordPolicy {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [Parameter(ValueFromPipeline = $true)]
@@ -143,7 +143,7 @@ try {
     Import-ADModule
     $csvData = Import-UserCSV -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
 
-    $csvData | Update-PasswordPolicy
+    $csvData | UpdatePasswordPolicy
 
     Write-Log "Script concluído com sucesso."
 }
