@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Executa a atualização automática do Windows, verificando e instalando patches disponíveis.
 
@@ -25,35 +25,36 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit 1
 }
 
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
-$logFile = "C:\logs\WindowsUpdate.log"
+$logFile = "$env:TEMP\WindowsUpdate.log"
 
 function Write-Log {
     param (
-        [string]$mensagem,
+        [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$Level] $mensagem"
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
 
-    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
-    if (-not (Test-Path $logDir)) {
-        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+
+        Write-Output $logEntry | Write-Host -ForegroundColor $color
     }
-
-    if (-not (Test-Path $logFile)) {
-        "" | Out-File -FilePath $logFile -Encoding UTF8
-    }
-
-    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
-
-    switch ($Level) {
-        "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
-        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
-        default { Write-Host $logEntry }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -76,6 +77,25 @@ function Send-Notification {
     catch {
         Write-Log "Failed to send notification: $($_.Exception.Message)" -Level "ERROR"
     }
+}
+
+function Get-UpdateSource {
+    $wuRegistryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+    $wuAUServer = "$wuRegistryPath\AU"
+
+    if (Test-Path $wuRegistryPath) {
+        $useWUServer = Get-ItemProperty -Path $wuAUServer -Name "UseWUServer" -ErrorAction SilentlyContinue
+        if ($useWUServer -and $useWUServer.UseWUServer -eq 1) {
+            $wuServer = Get-ItemProperty -Path $wuRegistryPath -Name "WUServer" -ErrorAction SilentlyContinue
+            if ($wuServer) {
+                Write-Log "Updates are being sourced from WSUS server: $($wuServer.WUServer)" -Level "INFO"
+                return "WSUS", $wuServer.WUServer
+            }
+        }
+    }
+
+    Write-Log "Updates are being sourced directly from Microsoft." -Level "INFO"
+    return "Microsoft", $null
 }
 
 function Get-WindowsUpdates {
@@ -151,6 +171,11 @@ function Install-Updates {
 
 try {
     Install-BurntToast
+
+    $updateSource, $wsusServer = Get-UpdateSource
+    if ($updateSource -eq "WSUS") {
+        Write-Log "WSUS Server URL: $wsusServer" -Level "INFO"
+    }
 
     $updates = Get-WindowsUpdates
     if ($updates.Count -eq 0) {

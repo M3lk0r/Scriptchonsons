@@ -41,29 +41,32 @@ $logFile = "C:\logs\AddUsersToGroup.log"
 
 function Write-Log {
     param (
-        [string]$mensagem,
+        [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$Level] $mensagem"
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
 
-    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
-    if (-not (Test-Path $logDir)) {
-        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+
+        Write-Output $logEntry | Write-Host -ForegroundColor $color
     }
-
-    if (-not (Test-Path $logFile)) {
-        "" | Out-File -FilePath $logFile -Encoding UTF8
-    }
-
-    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
-
-    switch ($Level) {
-        "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
-        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
-        default { Write-Host $logEntry }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -115,6 +118,11 @@ function Add-UsersToGroup {
 }
 
 try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+
     Write-Log "Iniciando script de adição de usuários ao grupo no AD."
 
     Import-ADModule

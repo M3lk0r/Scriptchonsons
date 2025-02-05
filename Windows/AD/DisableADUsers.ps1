@@ -23,16 +23,17 @@
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
     Data: 29/01/2025
-    Versão: 1.1
-        Força output : UTF-8
+    Versão: 1.2
+        - Melhorias no tratamento de erros, logs e modularização.
     
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param (
     [Parameter(Mandatory = $true, HelpMessage = "Caminho completo para o arquivo CSV com os sAMAccountName dos usuários a serem desabilitados.")]
+    [ValidateScript({ Test-Path $_ -PathType Leaf })]
     [string]$CsvPath,
 
     [Parameter(Mandatory = $false, HelpMessage = "Delimitação do CSV (, ou ;), padrão é (;).")]
@@ -42,47 +43,107 @@ param (
     [string]$Encoding = "UTF8"
 )
 
-try {
-    Import-Module ActiveDirectory -ErrorAction Stop
-    Write-Verbose "Módulo ActiveDirectory importado com sucesso."
-}
-catch {
-    Write-Error "Falha ao importar o módulo ActiveDirectory: $_"
-    exit 1
-}
-
-try {
-    $usuarios = Import-Csv -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
-    Write-Host "CSV importado com sucesso. Total de usuários a processar: $($usuarios.Count)" -ForegroundColor Green
-} catch {
-    Write-Error "Falha ao importar o CSV: $_"
-    exit 1
-}
-
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$logFile = "C:\logs\DisableADUsers.log"
+
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+
+        Write-Output $logEntry | Write-Host -ForegroundColor $color
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Import-ADModule {
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop
+        Write-Log "Módulo ActiveDirectory importado com sucesso."
+    }
+    catch {
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+
 function Disable-ADUserAccount {
     param (
         [string]$SamAccountName
     )
-
     try {
-        $user = Get-ADUser -Identity $SamAccountName -Properties Enabled
+        $user = Get-ADUser -Identity $SamAccountName -Properties Enabled -ErrorAction Stop
 
-        if ($user) {
-            if ($user.Enabled -eq $true) {
-                Disable-ADAccount -Identity $user
-                Write-Host "Usuário $($SamAccountName) desabilitado com sucesso." -ForegroundColor Cyan
-            } else {
-                Write-Host "Usuário $($SamAccountName) já está desabilitado." -ForegroundColor Yellow
-            }
-        } else {
-            Write-Warning "Usuário $($SamAccountName) não encontrado no Active Directory."
+        if ($user.Enabled -eq $true) {
+            Disable-ADAccount -Identity $user -Confirm:$false
+            Write-Log "Usuário $(SamAccountName) desabilitado com sucesso."
         }
-    } catch {
-        Write-Warning "Erro ao tentar desabilitar o usuário $($SamAccountName): $_"
+        else {
+            Write-Log "Usuário $(SamAccountName) já está desabilitado." -Level "WARNING"
+        }
+    }
+    catch {
+        Write-Log "Erro ao tentar desabilitar o usuário $(SamAccountName): $($_.Exception.Message)" -Level "ERROR"
     }
 }
 
-foreach ($usuario in $usuarios) {
-    Disable-ADUserAccount -SamAccountName $usuario.sAMAccountName
+try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+    
+    Import-ADModule
+
+    try {
+        $usuarios = Import-Csv -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
+        Write-Log "CSV importado com sucesso. Total de usuários a processar: $($usuarios.Count)"
+    }
+    catch {
+        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+
+    $totalUsuarios = $usuarios.Count
+    $counter = 0
+
+    foreach ($usuario in $usuarios) {
+        $counter++
+        $progress = [math]::Round(($counter / $totalUsuarios) * 100, 2)
+        Write-Progress -Activity "Desabilitando usuários" -Status "Progresso: $progress%" -PercentComplete $progress
+
+        if ($usuario.sAMAccountName) {
+            Disable-ADUserAccount -SamAccountName $usuario.sAMAccountName
+        }
+        else {
+            Write-Log "Linha $counter do CSV não contém um valor válido para sAMAccountName." -Level "WARNING"
+        }
+    }
+}
+catch {
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

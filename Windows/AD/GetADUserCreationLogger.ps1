@@ -47,17 +47,32 @@ foreach ($dir in @($exportDir, (Split-Path -Path $logFile))) {
 
 function Write-Log {
     param (
-        [string]$mensagem,
+        [string]$Message,
         [string]$Level = "INFO"
     )
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$Level] $mensagem"
-    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
-    switch ($Level) {
-        "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
-        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
-        default { Write-Host $logEntry }
+
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }[$Level] ?? "White"
+
+        Write-Output $logEntry | Write-Host -ForegroundColor $color
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -73,6 +88,11 @@ function Import-ADModule {
 }
 
 try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+    
     switch ($TimeUnit) {
         "H" { $Time = (Get-Date).AddHours(-$TimeValue) }
         "D" { $Time = (Get-Date).AddDays(-$TimeValue) }
@@ -89,7 +109,7 @@ try {
     ForEach ($DC in $AllDCs) {
         try {
             Write-Log "Coletando eventos do DC: $($DC.Name)"
-            Get-WinEvent -ComputerName $DC.Name -FilterHashtable @{LogName = "Security"; ID = 4720; StartTime = $Time } | ForEach-Object {
+            Get-WinEvent -ComputerName $DC.Name -FilterHashtable @{LogName = "Security"; ID = 4720; StartTime = $Time } -ErrorAction SilentlyContinue | ForEach-Object {
                 $event = [xml]$_.ToXml()
                 if ($event) {
                     $objReport = [PSCustomObject]@{
@@ -117,4 +137,5 @@ try {
 }
 catch {
     Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

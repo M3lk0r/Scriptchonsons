@@ -18,8 +18,8 @@
 .NOTES
     Autor: Eduardo Augusto Gomes
     Data: 18/12/2024
-    Versão: 2.0
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.4.
+    Versão: 2.1
+        Melhorias no manuseio de erros e otimização de consultas.
 
 .LINK
     https://github.com/M3lk0r/Powershellson
@@ -34,35 +34,49 @@ param (
     [string]$OutputFile
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\ExportUsersAndGroups.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
         [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$dataHora] [$Level] $Message"
+
+    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+
+    if (-not (Test-Path $logFile)) {
+        "" | Out-File -FilePath $logFile -Encoding UTF8
+    }
+
+    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+    switch ($Level) {
+        "INFO" { Write-Host $logEntry -ForegroundColor Green }
+        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
+        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
+        default { Write-Host $logEntry }
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Função para exportar informações de usuários e grupos
 function Export-UsersAndGroups {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -71,19 +85,17 @@ function Export-UsersAndGroups {
     )
 
     try {
-        # Obtém todos os usuários na OU especificada
         $users = Get-ADUser -Filter * -SearchBase $OU -Properties DisplayName, MemberOf -ErrorAction Stop
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
     catch {
-        Write-Log "Falha ao obter usuários da OU '$OU': $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao obter usuários da OU '$OU': $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 
     $totalUsers = $users.Count
     $currentUser = 0
 
-    # Inicializa uma lista para armazenar as informações
     $usersInfo = @()
 
     foreach ($user in $users) {
@@ -92,37 +104,32 @@ function Export-UsersAndGroups {
         Write-Progress -Activity "Processando usuários" -Status "$currentUser de $totalUsers" -PercentComplete $percentComplete
 
         try {
-            # Obtém os grupos do usuário
             $groups = $user.MemberOf | ForEach-Object { (Get-ADGroup $_).Name }
 
-            # Cria um objeto com as informações desejadas
             $userInfo = [PSCustomObject]@{
-                Usuario     = $user.SamAccountName
-                DisplayName = $user.DisplayName
+                Usuario           = $user.SamAccountName
+                DisplayName       = $user.DisplayName
                 distinguishedName = $user.DistinguishedName
-                Grupos      = $groups -join ";"
+                Grupos            = $groups -join ";"
             }
 
-            # Adiciona o objeto à lista
             $usersInfo += $userInfo
         }
         catch {
-            Write-Log "Falha ao processar o usuário '$($user.SamAccountName)': $_" -Level "ERROR"
+            Write-Log "Falha ao processar o usuário '$($user.SamAccountName)': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 
     try {
-        # Exporta a lista de informações para um arquivo CSV
         $usersInfo | Export-Csv -Path $OutputFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
         Write-Log "Exportação concluída para: $OutputFile"
     }
     catch {
-        Write-Log "Falha ao exportar o arquivo CSV: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao exportar o arquivo CSV: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Início do script
 try {
     Write-Log "Iniciando script de exportação de usuários e grupos no AD."
 
@@ -132,6 +139,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
-    throw
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

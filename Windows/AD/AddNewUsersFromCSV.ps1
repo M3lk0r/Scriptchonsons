@@ -93,29 +93,32 @@ $logFile = "C:\logs\ADUserCreation.log"
 
 function Write-Log {
     param (
-        [string]$mensagem,
+        [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$Level] $mensagem"
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
 
-    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
-    if (-not (Test-Path $logDir)) {
-        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+
+        Write-Output $logEntry | Write-Host -ForegroundColor $color
     }
-
-    if (-not (Test-Path $logFile)) {
-        "" | Out-File -FilePath $logFile -Encoding UTF8
-    }
-
-    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
-
-    switch ($Level) {
-        "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
-        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
-        default { Write-Host $logEntry }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -186,19 +189,19 @@ function Add-Users {
                         $userUpn = $UpnDomain ? "$($user.sAMAccountName)$UpnDomain" : "$($user.sAMAccountName)$DomainSuffix"
 
                         $newUserParams = @{
-                            GivenName              = $user.givenName
-                            Surname                = $user.sn
-                            SamAccountName         = $user.sAMAccountName
-                            DisplayName            = $user.namedisplayNamecn
-                            Name                   = $user.namedisplayNamecn
-                            Description            = $user.titledescription
-                            Department             = $user.Department
-                            Title                  = $user.titledescription
-                            UserPrincipalName      = $userUpn
-                            Path                   = $user.ou
-                            AccountPassword        = $Password
-                            Enabled                = $true
-                            ChangePasswordAtLogon  = $true
+                            GivenName             = $user.givenName
+                            Surname               = $user.sn
+                            SamAccountName        = $user.sAMAccountName
+                            DisplayName           = $user.namedisplayNamecn
+                            Name                  = $user.namedisplayNamecn
+                            Description           = $user.titledescription
+                            Department            = $user.Department
+                            Title                 = $user.titledescription
+                            UserPrincipalName     = $userUpn
+                            Path                  = $user.ou
+                            AccountPassword       = $Password
+                            Enabled               = $true
+                            ChangePasswordAtLogon = $true
                         }
 
                         New-ADUser @newUserParams -ErrorAction Stop
@@ -300,6 +303,10 @@ function Update-Users {
 }
 
 try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
     Write-Log "Iniciando script de criação e atualização de usuários no AD."
 
     Import-ADModule
