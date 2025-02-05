@@ -17,15 +17,20 @@
     Exemplo: "C:\export"
 
 .EXAMPLE
-    .\ExportADGroupChanges.ps1 -TimeUnit "H" -TimeValue 24 -OutputDir "C:\export"
+    .\Export-ADGroupChanges.ps1 -TimeUnit "H" -TimeValue 24 -OutputDir "C:\export"
 
 .NOTES
     Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
     Data: 05/02/2025
-    Versão: 3.1
-        - Adicionado suporte a unidades de tempo (horas, dias, meses)
-        - Suporte a -WhatIf e -Confirm
-        - Otimização para PowerShell 7.5
+    Versão: 3.3
+        - Adicionada verificação de disponibilidade do namespace System.Diagnostics.Eventing.Reader.
+        - Documentação clara dos pré-requisitos.
+
+.PREREQUISITES
+    - PowerShell 7.0 ou superior.
+    - Módulo ActiveDirectory instalado e importado.
+    - Acesso aos logs de segurança nos controladores de domínio.
+    - Namespace System.Diagnostics.Eventing.Reader disponível (presente no .NET Framework ou .NET Core 3.1+).
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
@@ -41,7 +46,7 @@ param (
     [ValidateRange(1, 365)]
     [int]$TimeValue,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Diretorio para salvar relatorio")]
+    [Parameter(Mandatory = $false, HelpMessage = "Diretório para salvar relatório")]
     [string]$OutputDir = "C:\export"
 )
 
@@ -59,12 +64,12 @@ function Write-Log {
         $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $logEntry = "[$dataHora] [$Level] $Message"
 
-        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        $logDir = [System.IO.Path]::GetDirectoryName($logFile)
         if (-not (Test-Path $logDir)) {
             New-Item -ItemType Directory -Path $logDir -Force | Out-Null
         }
 
-        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+        $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
 
         $color = @{
             "INFO"    = "Green"
@@ -91,62 +96,91 @@ function Import-ADModule {
     }
 }
 
+function Test-EventingReaderAvailable {
+    try {
+        $null = [System.Diagnostics.Eventing.Reader.EventLogProviderException]
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-ADGroupChanges {
     param (
         [int]$EventID,
         [string]$Action,
-        [string]$TimeUnit,
-        [int]$TimeValue
+        [datetime]$StartTime
     )
     
     $Results = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $StartTime = switch ($TimeUnit) {
-        "H" { (Get-Date).AddHours(-$TimeValue) }
-        "D" { (Get-Date).AddDays(-$TimeValue) }
-        "M" { (Get-Date).AddMonths(-$TimeValue) }
-    }
-    
     $DCs = Get-ADDomainController -Filter *
 
     $Results += $DCs | ForEach-Object -Parallel {
         $DC = $_
         $LocalResults = [System.Collections.Generic.List[PSCustomObject]]::new()
         try {
-            $Events = Get-WinEvent -ComputerName $DC.Name -FilterHashtable @{LogName = "Security"; ID = $using:EventID; StartTime = $using:StartTime } -ErrorAction Stop
-            $Events | ForEach-Object {
-                $Event = $_
-                $EventXML = [xml]$Event.ToXml()
-                $LocalResults.Add([PSCustomObject]@{
-                        Action    = $using:Action
-                        DC        = $EventXML.Event.System.Computer
-                        EventTime = $Event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
-                        Group     = $EventXML.Event.EventData.Data[2]."#text"
-                        User      = $EventXML.Event.EventData.Data[0]."#text"
-                        Admin     = $EventXML.Event.EventData.Data[6]."#text"
-                    })
+            $Events = Get-WinEvent -ComputerName $DC.Name -FilterHashtable @{
+                LogName   = "Security"
+                ID        = $using:EventID
+                StartTime = $using:StartTime
+            } -ErrorAction Stop
+
+            if ($Events) {
+                $Events | ForEach-Object {
+                    $Event = $_
+                    $EventXML = [xml]$Event.ToXml()
+                    $LocalResults.Add([PSCustomObject]@{
+                            Action    = $using:Action
+                            DC        = $EventXML.Event.System.Computer
+                            EventTime = $Event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+                            Group     = $EventXML.Event.EventData.Data[2]."#text"
+                            User      = $EventXML.Event.EventData.Data[0]."#text"
+                            Admin     = $EventXML.Event.EventData.Data[6]."#text"
+                        })
+                }
+                Write-Log "Eventos de $using:Action capturados com sucesso em $($DC.Name)" -Level "INFO"
             }
-            Write-Host "Eventos de $using:Action capturados com sucesso em $($DC.Name)"
+            else {
+                Write-Log "Nenhum evento de $using:Action encontrado em $($DC.Name)." -Level "WARNING"
+            }
+        }
+        catch [System.Diagnostics.Eventing.Reader.EventLogNotFoundException] {
+            Write-Log "Log de segurança não encontrado em $($DC.Name)." -Level "ERROR"
+        }
+        catch [System.Diagnostics.Eventing.Reader.EventLogProviderException] {
+            Write-Log "Erro ao acessar o log de segurança em $($DC.Name): $($_.Exception.Message)" -Level "ERROR"
         }
         catch {
-            Write-Host "Erro ao capturar eventos de $using:Action em $($DC.Name): $($_.Exception.Message)" -ForegroundColor Red
+            Write-Log "Erro ao capturar eventos de $using:Action em $($DC.Name): $($_.Exception.Message)" -Level "ERROR"
         }
         return $LocalResults
     }
     return $Results
 }
 
-
 try {
     if ($PSVersionTable.PSVersion.Major -lt 7) {
         Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
         exit 1
     }
-    
+
+    if (-not (Test-EventingReaderAvailable)) {
+        Write-Log "O namespace System.Diagnostics.Eventing.Reader não está disponível neste ambiente. Certifique-se de que o .NET Framework ou .NET Core 3.1+ está instalado." -Level "ERROR"
+        exit 1
+    }
+
     Import-ADModule
 
     if ($PSCmdlet.ShouldProcess("Exportar eventos de alterações de grupos do AD", "Confirma a execução do script?")) {
-        $AdditionsReport = Get-ADGroupChanges -EventID 4732 -Action "Added"
-        $RemovalsReport = Get-ADGroupChanges -EventID 4733 -Action "Removed"
+        $StartTime = switch ($TimeUnit) {
+            "H" { (Get-Date).AddHours(-$TimeValue) }
+            "D" { (Get-Date).AddDays(-$TimeValue) }
+            "M" { (Get-Date).AddMonths(-$TimeValue) }
+        }
+
+        $AdditionsReport = Get-ADGroupChanges -EventID 4732 -Action "Added" -StartTime $StartTime
+        $RemovalsReport = Get-ADGroupChanges -EventID 4733 -Action "Removed" -StartTime $StartTime
 
         $CombinedReport = $AdditionsReport + $RemovalsReport
         $FileName = Join-Path -Path $OutputDir -ChildPath "ADGroupChanges_$(Get-Date -Format 'yyyy-MM-dd_HH-mm-ss').csv"
@@ -166,7 +200,6 @@ try {
     else {
         Write-Log "Operação cancelada pelo usuário." -Level "WARNING"
     }
-
 }
 catch {
     Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"

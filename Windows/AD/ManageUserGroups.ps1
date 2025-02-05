@@ -42,23 +42,41 @@ param (
     [string]$GroupNameToRemove
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\ManageUserGroups.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
         [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
@@ -70,7 +88,6 @@ function Import-ADModule {
     }
 }
 
-# Função para adicionar um grupo a todos os usuários de uma determinada OU
 function Add-GroupToUsersInOU {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -107,7 +124,6 @@ function Add-GroupToUsersInOU {
     }
 }
 
-# Função para definir um grupo como o grupo principal para os usuários que são membros dele
 function Set-PrimaryGroupForUsersInOU {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -125,7 +141,7 @@ function Set-PrimaryGroupForUsersInOU {
     }
 
     $primaryGroupID = [string]$group.PrimaryGroupToken
-    if ($primaryGroupID -eq $null -or $primaryGroupID -eq 0) {
+    if ($null -eq $primaryGroupID -or $primaryGroupID -eq 0) {
         Write-Log "ID do grupo principal inválido para '$GroupNameToAdd'." -Level "ERROR"
         throw
     }
@@ -166,7 +182,6 @@ function Set-PrimaryGroupForUsersInOU {
     }
 }
 
-# Função para remover um grupo de todos os usuários de uma determinada OU
 function Remove-Group {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -216,8 +231,11 @@ function Remove-Group {
     }
 }
 
-# Início do script
 try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
     Write-Log "Iniciando script de gerenciamento de grupos de usuários no AD."
 
     Import-ADModule

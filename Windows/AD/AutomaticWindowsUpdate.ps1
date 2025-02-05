@@ -49,8 +49,8 @@ function Write-Log {
             "ERROR"   = "Red"
             "WARNING" = "Yellow"
         }
-
-        Write-Output $logEntry | Write-Host -ForegroundColor $color
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
     catch {
         Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red

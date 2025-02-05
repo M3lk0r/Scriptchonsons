@@ -43,29 +43,32 @@ $logFile = "C:\logs\InstalarCertificados.log"
 
 function Write-Log {
     param (
-        [string]$mensagem,
+        [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$dataHora] [$Level] $mensagem"
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
 
-    $logDir = [System.IO.Path]::GetDirectoryName($logFile)
-    if (-not (Test-Path $logDir)) {
-        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
-
-    if (-not (Test-Path $logFile)) {
-        "" | Out-File -FilePath $logFile -Encoding UTF8
-    }
-
-    $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
-
-    switch ($Level) {
-        "INFO" { Write-Host $logEntry -ForegroundColor Green }
-        "ERROR" { Write-Host $logEntry -ForegroundColor Red }
-        "WARNING" { Write-Host $logEntry -ForegroundColor Yellow }
-        default { Write-Host $logEntry }
+    catch {
+        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -156,9 +159,9 @@ try {
 
         try {
             $jsonContent = Get-Content -Path $CaminhoJson -Raw | ConvertFrom-Json
-            $caminhoPadraoCertificados = $jsonContent.CaminhoPadraoCertificados
+            $caminhoPadraoCertificados = $jsonContent.CaminhoPadraoCertificados -replace '^\\', '\\'
             $certificados = $jsonContent.Certificados
-            Write-Log "Arquivo JSON carregado com sucesso. Caminho padrão: $caminhoPadraoCertificados."
+            Write-Log "Arquivo JSON carregado com sucesso. Caminho padrão: $($caminhoPadraoCertificados)"
         }
         catch {
             Write-Log "Erro ao carregar o arquivo JSON: $($_.Exception.Message)" -Level "ERROR"

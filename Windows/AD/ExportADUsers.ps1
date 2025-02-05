@@ -72,9 +72,9 @@ function Write-Log {
             "INFO"    = "Green"
             "ERROR"   = "Red"
             "WARNING" = "Yellow"
-        }[$Level] ?? "White"
-
-        Write-Output $logEntry | Write-Host -ForegroundColor $color
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
     catch {
         Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
@@ -99,7 +99,7 @@ try {
         exit 1
     }
     
-    $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $dataHora = Get-Date -Format "yyyy-MM-dd HH-mm-ss"
     $OutputFile = "$OutputDir\ExportADUsers_$dataHora.csv"
 
     Import-ADModule
