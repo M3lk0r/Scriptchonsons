@@ -14,6 +14,9 @@
     O nome do grupo de destino ao qual os membros serão adicionados.
     Exemplo: "GGD_ColaboradoresContoso2"
 
+.PARAMETER WhatIf
+    Simula a execução do script sem aplicar mudanças reais ao Active Directory.
+
 .EXAMPLE
     .\AddGroupMembers.ps1 -SourceGroup "GGD_ColaboradoresContoso1" -TargetGroup "GGD_ColaboradoresContoso2"
 
@@ -95,7 +98,7 @@ function Read-Permission {
         return $true
     }
     catch {
-        Write-Log "O usuário atual não tem permissão para adicionar membros ao grupo '$TargetGroup'. Script abortado." -Level "ERROR"
+        Write-Log "Sem permissão para adicionar membros ao grupo '$TargetGroup'." -Level "ERROR"
         exit 1
     }
 }
@@ -130,7 +133,7 @@ function Add-MembersToGroup {
             }
         }
         catch {
-            Write-Log "Falha ao adicionar o usuário '$user' ao grupo '$TargetGroup': $($_.Exception.Message)" -Level "ERROR"
+            Write-Log "Erro ao adicionar '$user' ao grupo '$TargetGroup': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }
