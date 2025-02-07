@@ -23,8 +23,8 @@
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
     Data: 29/01/2025
-    Versão: 1.2
-        - Melhorias no tratamento de erros, logs e modularização.
+    Versão: 1.3
+        - Melhorias na modularização e suporte ao -WhatIf.
     
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
@@ -73,7 +73,7 @@ function Write-Log {
         Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
     catch {
-        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }
@@ -89,8 +89,8 @@ function Import-ADModule {
     }
 }
 
-
 function Disable-ADUserAccount {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [string]$SamAccountName
     )
@@ -98,15 +98,51 @@ function Disable-ADUserAccount {
         $user = Get-ADUser -Identity $SamAccountName -Properties Enabled -ErrorAction Stop
 
         if ($user.Enabled -eq $true) {
-            Disable-ADAccount -Identity $user -Confirm:$false
-            Write-Log "Usuário $(SamAccountName) desabilitado com sucesso."
+            if ($PSCmdlet.ShouldProcess($SamAccountName, "Desabilitar conta de usuário")) {
+                Disable-ADAccount -Identity $user -Confirm:$false
+                Write-Log "Usuário $($SamAccountName) desabilitado com sucesso."
+            }
         }
         else {
-            Write-Log "Usuário $(SamAccountName) já está desabilitado." -Level "WARNING"
+            Write-Log "Usuário $($SamAccountName) já está desabilitado." -Level "WARNING"
         }
     }
     catch {
-        Write-Log "Erro ao tentar desabilitar o usuário $(SamAccountName): $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Erro ao tentar desabilitar o usuário $($SamAccountName): $($_.Exception.Message)" -Level "ERROR"
+    }
+}
+
+function Initialize-UsersFromCSV {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param (
+        [string]$CsvPath,
+        [string]$Delimiter,
+        [string]$Encoding
+    )
+
+    try {
+        $usuarios = Import-Csv -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
+        Write-Log "CSV importado com sucesso. Total de usuários a processar: $($usuarios.Count)"
+
+        $totalUsuarios = $usuarios.Count
+        $counter = 0
+
+        foreach ($usuario in $usuarios) {
+            $counter++
+            $progress = [math]::Round(($counter / $totalUsuarios) * 100, 2)
+            Write-Progress -Activity "Desabilitando usuários" -Status "Progresso: $progress%" -PercentComplete $progress
+
+            if ($usuario.sAMAccountName) {
+                Disable-ADUserAccount -SamAccountName $usuario.sAMAccountName
+            }
+            else {
+                Write-Log "Linha $counter do CSV não contém um valor válido para sAMAccountName." -Level "WARNING"
+            }
+        }
+    }
+    catch {
+        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
@@ -117,31 +153,7 @@ try {
     }
     
     Import-ADModule
-
-    try {
-        $usuarios = Import-Csv -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
-        Write-Log "CSV importado com sucesso. Total de usuários a processar: $($usuarios.Count)"
-    }
-    catch {
-        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
-        exit 1
-    }
-
-    $totalUsuarios = $usuarios.Count
-    $counter = 0
-
-    foreach ($usuario in $usuarios) {
-        $counter++
-        $progress = [math]::Round(($counter / $totalUsuarios) * 100, 2)
-        Write-Progress -Activity "Desabilitando usuários" -Status "Progresso: $progress%" -PercentComplete $progress
-
-        if ($usuario.sAMAccountName) {
-            Disable-ADUserAccount -SamAccountName $usuario.sAMAccountName
-        }
-        else {
-            Write-Log "Linha $counter do CSV não contém um valor válido para sAMAccountName." -Level "WARNING"
-        }
-    }
+    Initialize-UsersFromCSV -CsvPath $CsvPath -Delimiter $Delimiter -Encoding $Encoding
 }
 catch {
     Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"

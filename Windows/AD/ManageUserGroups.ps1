@@ -22,9 +22,11 @@
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
-    Data: 29/01/2025
-    Versão: 2.0
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.4.
+    Data: 06/02/2025
+    Versão: 2.1
+        - Suporte otimizado para PowerShell 7.5
+        - Melhor tratamento de erros
+        - Aprimoramento no logging
 
 .LINK
     https://github.com/M3lk0r/Powershellson
@@ -72,7 +74,7 @@ function Write-Log {
         Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
     catch {
-        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }
@@ -83,7 +85,7 @@ function Import-ADModule {
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 }
@@ -100,7 +102,7 @@ function Add-GroupToUsersInOU {
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
     catch {
-        Write-Log "Falha ao obter usuários da OU '$OU': $_" -Level "ERROR"
+        Write-Log "Falha ao obter usuários da OU '$OU': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -119,7 +121,7 @@ function Add-GroupToUsersInOU {
             }
         }
         catch {
-            Write-Log "Falha ao adicionar o usuário '$($user.SamAccountName)' ao grupo '$GroupNameToAdd': $_" -Level "ERROR"
+            Write-Log "Falha ao adicionar o usuário '$($user.SamAccountName)' ao grupo '$GroupNameToAdd': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }
@@ -136,7 +138,7 @@ function Set-PrimaryGroupForUsersInOU {
         Write-Log "Grupo '$GroupNameToAdd' encontrado: $($group.DistinguishedName)"
     }
     catch {
-        Write-Log "Falha ao obter o grupo '$GroupNameToAdd': $_" -Level "ERROR"
+        Write-Log "Falha ao obter o grupo '$GroupNameToAdd': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -151,7 +153,7 @@ function Set-PrimaryGroupForUsersInOU {
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
     catch {
-        Write-Log "Falha ao obter usuários da OU '$OU': $_" -Level "ERROR"
+        Write-Log "Falha ao obter usuários da OU '$OU': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -177,7 +179,7 @@ function Set-PrimaryGroupForUsersInOU {
             }
         }
         catch {
-            Write-Log "Falha ao definir o grupo principal para o usuário '$($user.SamAccountName)': $_" -Level "ERROR"
+            Write-Log "Falha ao definir o grupo principal para o usuário '$($user.SamAccountName)': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }
@@ -194,7 +196,7 @@ function Remove-Group {
         Write-Log "Grupo '$GroupNameToRemove' encontrado: $($groupToRemove.DistinguishedName)"
     }
     catch {
-        Write-Log "Falha ao obter o grupo '$GroupNameToRemove': $_" -Level "ERROR"
+        Write-Log "Falha ao obter o grupo '$GroupNameToRemove': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -203,7 +205,7 @@ function Remove-Group {
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
     catch {
-        Write-Log "Falha ao obter usuários da OU '$OU': $_" -Level "ERROR"
+        Write-Log "Falha ao obter usuários da OU '$OU': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -226,7 +228,7 @@ function Remove-Group {
             }
         }
         catch {
-            Write-Log "Falha ao remover o grupo '$GroupNameToRemove' do usuário '$($user.SamAccountName)': $_" -Level "ERROR"
+            Write-Log "Falha ao remover o grupo '$GroupNameToRemove' do usuário '$($user.SamAccountName)': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }
@@ -246,6 +248,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
     throw
 }

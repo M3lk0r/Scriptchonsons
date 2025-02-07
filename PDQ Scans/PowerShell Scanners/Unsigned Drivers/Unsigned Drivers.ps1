@@ -1,1 +1,0 @@
-Get-CimInstance -Query 'SELECT * FROM Win32_PnpSignedDriver WHERE IsSigned != TRUE AND DeviceID != "HTREE\\ROOT\\0"' | Select-Object DeviceName, DeviceId, PDO

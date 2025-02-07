@@ -65,7 +65,7 @@ function Write-Log {
         Write-Output $logEntry | Write-Host -ForegroundColor $logColor
     }
     catch {
-        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }
@@ -93,7 +93,7 @@ function Add-UsersToGroup {
         Write-Log "Usuários na OU '$OU' obtidos com sucesso. Total de usuários: $($users.Count)"
     }
     catch {
-        Write-Log "Falha ao obter usuários da OU '$OU': $_" -Level "ERROR"
+        Write-Log "Falha ao obter usuários da OU '$OU': $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 
@@ -112,7 +112,7 @@ function Add-UsersToGroup {
             }
         }
         catch {
-            Write-Log "Falha ao adicionar o usuário '$($user.SamAccountName)' ao grupo '$Group': $_" -Level "ERROR"
+            Write-Log "Falha ao adicionar o usuário '$($user.SamAccountName)' ao grupo '$Group': $($_.Exception.Message)" -Level "ERROR"
         }
     }
 }

@@ -71,7 +71,7 @@ function Write-Log {
         Write-Output $logEntry | Write-Host -ForegroundColor $color
     }
     catch {
-        Write-Host "Erro ao escrever no log: $_" -ForegroundColor Red
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }

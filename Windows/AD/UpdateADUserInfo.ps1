@@ -29,15 +29,17 @@
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
-    Data: 29/01/2025
-    Versão: 1.1
-        Força output : UTF-8
+    Data: 06/02/2025
+    Versão: 2.0
+        - Suporte otimizado para PowerShell 7.5
+        - Melhor tratamento de erros
+        - Aprimoramento no logging
     
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param (
     [Parameter(Mandatory = $true, HelpMessage = "Diretorio do arquivo CSV a ser importado.")]
     [string]$CsvPath,
@@ -55,26 +57,54 @@ param (
     [string]$WebPage
 )
 
-try {
-    Import-Module ActiveDirectory -ErrorAction Stop
-    Write-Verbose "modulo ActiveDirectory importado com sucesso."
-}
-catch {
-    Write-Error "Falha ao importar o modulo ActiveDirectory: $_"
-    exit 1
-}
-
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-try {
-    $usuarios = Import-Csv -Path $CsvPath -Encoding $Encoding -Delimiter $Delimiter
-    Write-Host "CSV importado com sucesso. Total de Usuarios a processar: $($usuarios.Count)" -ForegroundColor Green
-} catch {
-    Write-Error "Falha ao importar o CSV: $_"
-    exit 1
+$logDir = "C:\logs\UpdateADUserInfo.log"
+
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+function Import-ADModule {
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop
+        Write-Log "Módulo ActiveDirectory importado com sucesso."
+    }
+    catch {
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
 }
 
 function Update-ADUserInfo {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [array]$Users
     )
@@ -82,33 +112,33 @@ function Update-ADUserInfo {
     foreach ($user in $Users) {
         try {
             if (-not $user.distinguishedName) {
-                Write-Warning "distinguishedName ausente para o Usuario: $($user.sAMAccountName). Pulando atualizacao."
+                Write-Log "distinguishedName ausente para o Usuario: $($user.sAMAccountName). Pulando atualizacao." -Level "WARNING"
                 continue
             }
 
             $adUser = Get-ADUser -Identity $user.distinguishedName -Properties *
 
             if (-not $adUser) {
-                Write-Warning "Usuario nao encontrado no AD com distinguishedName: $($user.distinguishedName)."
+                Write-Log "Usuario nao encontrado no AD com distinguishedName: $($user.distinguishedName)." -Level "WARNING"
                 continue
             }
 
             $parameters = @{
-                GivenName         = $user.givenName
-                Surname           = $user.sn
-                DisplayName       = $user.namedisplayNamecn
-                SamAccountName    = $user.sAMAccountName
-                Title             = $user.titledescription
-                Description       = $user.titledescription
-                Company           = $user.company
-                Department        = $user.department
-                StreetAddress     = $user.streetAddress
-                City              = $user.l
-                State             = $user.st
-                PostalCode        = $user.postalCode
-                Country           = $user.c
-                OfficePhone       = $user.telephoneNumber
-                EmployeeID        = $user.employeeID
+                GivenName      = $user.givenName
+                Surname        = $user.sn
+                DisplayName    = $user.namedisplayNamecn
+                SamAccountName = $user.sAMAccountName
+                Title          = $user.titledescription
+                Description    = $user.titledescription
+                Company        = $user.company
+                Department     = $user.department
+                StreetAddress  = $user.streetAddress
+                City           = $user.l
+                State          = $user.st
+                PostalCode     = $user.postalCode
+                Country        = $user.c
+                OfficePhone    = $user.telephoneNumber
+                EmployeeID     = $user.employeeID
             }
 
             Set-ADUser $adUser @parameters
@@ -121,16 +151,41 @@ function Update-ADUserInfo {
                 }
             }
 
-            Set-ADUser $adUser @replaceParams
+            Set-ADUser $adUser @replaceParams -ErrorAction Stop
 
-            Rename-ADObject -Identity $user.distinguishedName -NewName $user.namedisplayNamecn
+            Rename-ADObject `
+                -Identity $user.distinguishedName `
+                -NewName $user.namedisplayNamecn `
+                -ErrorAction Stop
 
-            Write-Host "Usuario atualizado com sucesso: $($user.sAMAccountName)" -ForegroundColor Cyan
+            Write-Log "Usuario atualizado com sucesso: $($user.sAMAccountName)" 
 
-        } catch {
-            Write-Warning "Falha ao atualizar o Usuario $($user.sAMAccountName): $_"
+        }
+        catch {
+            Write-Log "Falha ao atualizar o Usuario $($user.sAMAccountName): $($_.Exception.Message)" -Level "Error"
         }
     }
 }
 
-Update-ADUserInfo -Users $usuarios
+try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+
+    Import-ADModule
+
+    try {
+        $usuarios = Import-Csv -Path $CsvPath -Encoding $Encoding -Delimiter $Delimiter
+        Write-Log "CSV importado com sucesso. Total de Usuarios a processar: $($usuarios.Count)"
+    }
+    catch {
+        Write-Error "Falha ao importar o CSV: $($_.Exception.Message)"
+        exit 1
+    }
+    Update-ADUserInfo -Users $usuarios
+}
+catch {
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
+}

@@ -3,7 +3,7 @@
     Atualiza a política de senha para usuários no Active Directory a partir de um arquivo CSV.
 
 .DESCRIPTION
-    Este script importa um arquivo CSV contendo nomes de usuários e desativa a opção "PasswordNeverExpires" para cada usuário listado.
+    Este script importa um arquivo CSV contendo sAMAccountName e desativa a opção "PasswordNeverExpires" para cada usuário listado.
     O script suporta tratamento de erros, logging e feedback visual durante a execução.
 
 .PARAMETER CsvPath
@@ -13,16 +13,18 @@
     Delimitador utilizado no arquivo CSV. Padrão: ";"
 
 .PARAMETER Encoding
-    Codificação do arquivo CSV. Padrão: "Default"
+    Codificação do arquivo CSV. Padrão: "UTF8"
 
 .EXAMPLE
-    .\UpdatePasswordPolicy.ps1 -CsvPath "C:\Users\adm.gomes\Desktop\passwordnerver.csv" -Delimiter ";" -Encoding "Default"
+    .\UpdatePasswordPolicy.ps1 -CsvPath "C:\Users\adm.gomes\Desktop\passwordnerver.csv" -Delimiter ";" -Encoding "UTF8"
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
-    Data: 29/01/2025
-    Versão: 2.0
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.4.
+    Data: 06/02/2025
+    Versão: 2.1
+        - Suporte otimizado para PowerShell 7.5
+        - Melhor tratamento de erros
+        - Aprimoramento no logging
 
 .LINK
     https://github.com/M3lk0r/Powershellson
@@ -37,38 +39,55 @@ param (
     [string]$Delimiter = ";",
 
     [Parameter(Mandatory = $false, HelpMessage = "Codificação do arquivo CSV. Padrão: 'Default'")]
-    [string]$Encoding = "Default"
+    [string]$Encoding = "UTF8"
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\UpdatePasswordPolicy.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
         [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    try {
+        $dataHora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$dataHora] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($LogFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $LogFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
-        throw
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
     }
 }
 
-# Função para importar o CSV
 function Import-UserCSV {
     param (
         [string]$Path,
@@ -87,12 +106,11 @@ function Import-UserCSV {
         return $data
     }
     catch {
-        Write-Log "Falha ao importar o CSV: $_" -Level "ERROR"
+        Write-Log "Falha ao importar o CSV: $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 }
 
-# Função para atualizar a política de senha dos usuários
 function UpdatePasswordPolicy {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -116,10 +134,8 @@ function UpdatePasswordPolicy {
                 }
 
                 if ($PSCmdlet.ShouldProcess($user.Username, "Atualizar política de senha")) {
-                    # Obtém o usuário do AD
                     $adUser = Get-ADUser -Identity $user.Username -Properties PasswordNeverExpires -ErrorAction Stop
 
-                    # Verifica se a configuração precisa ser atualizada
                     if ($adUser.PasswordNeverExpires) {
                         Set-ADUser -Identity $user.Username -PasswordNeverExpires $false -ErrorAction Stop
                         Write-Log "Política de senha atualizada para o usuário '$($user.Username)'."
@@ -130,17 +146,22 @@ function UpdatePasswordPolicy {
                 }
             }
             catch {
-                Write-Log "Falha ao atualizar a política de senha para o usuário '$($user.Username)': $_" -Level "ERROR"
+                Write-Log "Falha ao atualizar a política de senha para o usuário '$($user.Username)': $($_.Exception.Message)" -Level "ERROR"
             }
         }
     }
 }
 
-# Início do script
 try {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+
     Write-Log "Iniciando script de atualização de política de senha no AD."
 
     Import-ADModule
+ 
     $csvData = Import-UserCSV -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding
 
     $csvData | UpdatePasswordPolicy
@@ -148,6 +169,6 @@ try {
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
-    throw
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

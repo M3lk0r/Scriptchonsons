@@ -1,1 +1,0 @@
-Get-CimInstance Win32_Printer | Where-Object Name -Like "\\*" | Select-Object ShareName, Name, Default
