@@ -1,6 +1,0 @@
-<Config>
-  <Geral>
-    <Portal Servidor="1502|net.tcp://erp-redirection.complem.br:1502/|1|||net.tcp://erp-redirection.complem.br:1503/||;Servidor de Homologação|net.tcp://erp-redirection.complem.br:1501/|0|||net.tcp://erp-redirection.complem.br:1501/||" Idioma="P" Usuario="" TamPapel="4" />
-    <Skin Config="255.0.0.0.255.255.255" />
-  </Geral>
-</Config>

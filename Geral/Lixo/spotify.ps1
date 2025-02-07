@@ -1,1 +1,0 @@
-Get-AppxPackage -allusers -Name "SpotifyAB.SpotifyMusic" | Foreach {Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\AppXManifest.xml"}
