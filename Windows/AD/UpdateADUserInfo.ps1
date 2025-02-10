@@ -92,6 +92,13 @@ function Write-Log {
     }
 }
 
+function Get-PSVersion {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+}
+
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
@@ -168,10 +175,9 @@ function Update-ADUserInfo {
 }
 
 try {
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
-        exit 1
-    }
+    Write-Log "Iniciando script."
+
+    Get-PSVersion
 
     Import-ADModule
 

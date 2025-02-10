@@ -112,7 +112,7 @@ function Get-WindowsUpdates {
     }
 }
 
-function Download-Updates {
+function Get-Updates {
     param (
         [array]$Updates
     )
@@ -186,7 +186,7 @@ try {
     Write-Log "Found $($updates.Count) updates:" -Level "INFO"
     $updates | ForEach-Object { Write-Log "- $($_.Title)" -Level "INFO" }
 
-    Download-Updates -Updates $updates
+    Get-Updates -Updates $updates
 
     $needsReboot = Install-Updates -Updates $updates
 

@@ -21,10 +21,9 @@
 .NOTES
     Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
     Data: 06/02/2025
-    Versão: 1.0
-        - Implementação inicial do script
-        - Adição de logs detalhados
-        - Tratamento de erros melhorado
+    Versão: 1.1
+        - Removido o uso de ForEach-Object -Parallel.
+        - Melhorias na modularização e suporte ao -WhatIf.
 
 .LINK
     Repositório: https://github.com/M3lk0r/Powershellson
@@ -73,6 +72,13 @@ function Write-Log {
     }
 }
 
+function Get-PSVersion {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
+        exit 1
+    }
+}
+
 function Import-DhcpServer {
     try {
         Import-Module DhcpServer -ErrorAction Stop
@@ -116,7 +122,6 @@ function Convert-ToMacFormat {
     }
 }
 
-
 function New-DHCPScope {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
@@ -150,7 +155,7 @@ function New-DHCPScope {
                     -ComputerName $ServerName `
                     -ScopeId $StartRange `
                     -Router $Gateway `
-                    -DnsServer $DNSServers  `
+                    -DnsServer $DNSServers `
                     -ErrorAction Stop
 
                 Write-Log "Escopo $ScopeName criado com sucesso."
@@ -161,7 +166,6 @@ function New-DHCPScope {
         }
     }
 }
-
 
 function Add-DHCPReservation {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
@@ -201,80 +205,44 @@ function Add-DHCPReservation {
     }
 }
 
+function Enter-DHCPConfig {
+    param (
+        [string]$ServerName,
+        [object]$Config
+    )
+
+    foreach ($scope in $config.Scopes) {
+        New-DHCPScope `
+            -ServerName $ServerName `
+            -ScopeName $scope.Name `
+            -StartRange $scope.StartRange `
+            -EndRange $scope.EndRange `
+            -SubnetMask $scope.SubnetMask `
+            -Gateway $scope.Gateway `
+            -DNSServers $scope.DNSServers `
+            -LeaseTime $scope.LeaseTime
+    }
+
+    foreach ($reservation in $config.Reservations) {
+        Add-DHCPReservation `
+            -ServerName $ServerName `
+            -IPAddress $reservation.IPAddress `
+            -MACAddress $reservation.MACAddress `
+            -Description $reservation.Description `
+            -ScopeID $reservation.ScopeID
+    }
+}
 
 try {
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
-        exit 1
-    }
+    Write-Log "Iniciando script."
+
+    Get-PSVersion
 
     Import-DhcpServer
 
     $config = Import-DHCPConfig -FilePath $ConfigFile
 
-    $config.Scopes | ForEach-Object -Parallel {
-        param ($ServerName)
-
-        try {
-            $existingScope = Get-DhcpServerv4Scope -ComputerName $using:ServerName | Where-Object { $_.Name -eq $_.Name }
-            if ($existingScope) {
-                Write-Host "Escopo $($_.Name) já existe. Pulando..." -ForegroundColor Yellow
-            }
-            else {
-                Add-DhcpServerv4Scope `
-                    -ComputerName $using:ServerName `
-                    -Name $_.Name `
-                    -StartRange $_.StartRange `
-                    -EndRange $_.EndRange `
-                    -SubnetMask $_.SubnetMask `
-                    -State Active `
-                    -ErrorAction Stop
-
-                Set-DhcpServerv4OptionValue `
-                    -ComputerName $using:ServerName `
-                    -ScopeId $_.StartRange `
-                    -Router $_.Gateway `
-                    -DnsServer $_.DNSServers `
-                    -ErrorAction Stop
-
-                Write-Host "Escopo $($_.Name) criado com sucesso." -ForegroundColor Green
-            }
-        }
-        catch {
-            Write-Host "Erro ao criar o escopo $($_.Name): $($_.Exception.Message)" -ForegroundColor Red
-        }
-    } -ArgumentList $ServerName -ThrottleLimit 5
-
-    $config.Reservations | ForEach-Object -Parallel {
-        param ($ServerName)
-
-        try {
-            $ClientID = Convert-ToMacFormat -MacAddress $_.MACAddress
-
-            $existingReservation = Get-DhcpServerv4Reservation `
-                -ComputerName $using:ServerName `
-                -ScopeId $_.ScopeID `
-                -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -eq $_.IPAddress }
-
-            if ($existingReservation) {
-                Write-Host "Reserva para $($_.IPAddress) já existe. Pulando..." -ForegroundColor Yellow
-            }
-            else {
-                Add-DhcpServerv4Reservation `
-                    -ComputerName $using:ServerName `
-                    -ScopeId $_.ScopeID `
-                    -IPAddress $_.IPAddress `
-                    -ClientId $ClientID `
-                    -Description $_.Description `
-                    -ErrorAction Stop
-
-                Write-Host "Reserva criada: $($_.IPAddress)" -ForegroundColor Green
-            }
-        }
-        catch {
-            Write-Host "Erro ao adicionar reserva para $($_.IPAddress): $($_.Exception.Message)" -ForegroundColor Red
-        }
-    } -ArgumentList $ServerName -ThrottleLimit 5
+    Enter-DHCPConfig -ServerName $ServerName -Config $config
 
     Write-Log "Configuração do DHCP aplicada com sucesso."
 }

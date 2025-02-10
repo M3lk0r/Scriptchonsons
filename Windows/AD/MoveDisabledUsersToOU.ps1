@@ -15,8 +15,9 @@
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
     Data: 29/01/2025
-    Versão: 2.0
-        Versão aprimorada com validações, logging, suporte a pipeline, tratamento de erros robusto e boas práticas do PowerShell 7.4.
+    Versão: 2.1
+        - Melhorias na modularização e suporte ao -WhatIf.
+        - Remoção de paralelismo e simplificação do código.
 
 .LINK
     https://github.com/M3lk0r/Powershellson
@@ -28,61 +29,80 @@ param (
     [string]$MoveToOU
 )
 
-# Configurações iniciais
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $logFile = "C:\logs\MoveDisabledUsersToOU.log"
 
-# Função para escrever logs
 function Write-Log {
     param (
         [string]$Message,
         [string]$Level = "INFO"
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFile -Value $logEntry
+    try {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "[$timestamp] [$Level] $Message"
+
+        $logDir = [System.IO.Path]::GetDirectoryName($logFile)
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+
+        $logEntry | Out-File -FilePath $logFile -Encoding UTF8 -Append
+
+        $color = @{
+            "INFO"    = "Green"
+            "ERROR"   = "Red"
+            "WARNING" = "Yellow"
+        }
+        $logColor = $color[$Level]
+        Write-Output $logEntry | Write-Host -ForegroundColor $logColor
+    }
+    catch {
+        Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
 }
 
-# Função para importar o módulo ActiveDirectory
 function Import-ADModule {
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
         Write-Log "Módulo ActiveDirectory importado com sucesso."
     }
     catch {
-        Write-Log "Falha ao importar o módulo ActiveDirectory: $_" -Level "ERROR"
+        Write-Log "Falha ao importar o módulo ActiveDirectory: $($_.Exception.Message)" -Level "ERROR"
+        exit 1
+    }
+}
+
+function Get-DisabledUsers {
+    try {
+        $disabledUsers = Get-ADUser -Filter { Enabled -eq $false } -Properties DistinguishedName -ErrorAction Stop
+        Write-Log "Usuários desativados obtidos com sucesso. Total de usuários: $($disabledUsers.Count)"
+        return $disabledUsers
+    }
+    catch {
+        Write-Log "Falha ao obter usuários desativados: $($_.Exception.Message)" -Level "ERROR"
         throw
     }
 }
 
-# Função para mover usuários desativados para a OU especificada
 function Move-DisabledUsersToOU {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
-        [string]$TargetOU
+        [string]$TargetOU,
+        [array]$DisabledUsers
     )
 
-    try {
-        # Obtém todos os usuários desativados
-        $disabledUsers = Get-ADUser -Filter { Enabled -eq $false } -Properties DistinguishedName -ErrorAction Stop
-        Write-Log "Usuários desativados obtidos com sucesso. Total de usuários: $($disabledUsers.Count)"
-    }
-    catch {
-        Write-Log "Falha ao obter usuários desativados: $_" -Level "ERROR"
-        throw
-    }
-
-    # Verifica se há usuários desativados encontrados
-    if ($disabledUsers.Count -eq 0) {
+    if ($DisabledUsers.Count -eq 0) {
         Write-Log "Nenhum usuário desativado encontrado." -Level "INFO"
         return
     }
 
-    $totalUsers = $disabledUsers.Count
+    $totalUsers = $DisabledUsers.Count
     $currentUser = 0
 
-    foreach ($user in $disabledUsers) {
+    foreach ($user in $DisabledUsers) {
         $currentUser++
         $percentComplete = ($currentUser / $totalUsers) * 100
         Write-Progress -Activity "Movendo usuários desativados" -Status "$currentUser de $totalUsers" -PercentComplete $percentComplete
@@ -94,21 +114,22 @@ function Move-DisabledUsersToOU {
             }
         }
         catch {
-            Write-Log "Falha ao mover o usuário '$($user.SamAccountName)': $_" -Level "ERROR"
+            Write-Log "Falha ao mover o usuário '$($user.SamAccountName)': $($_.Exception.Message)" -Level "ERROR"
+            continue
         }
     }
 }
 
-# Início do script
 try {
     Write-Log "Iniciando script de movimentação de usuários desativados no AD."
 
     Import-ADModule
-    Move-DisabledUsersToOU -TargetOU $MoveToOU
+    $disabledUsers = Get-DisabledUsers
+    Move-DisabledUsersToOU -TargetOU $MoveToOU -DisabledUsers $disabledUsers
 
     Write-Log "Script concluído com sucesso."
 }
 catch {
-    Write-Log "Erro fatal durante a execução do script: $_" -Level "ERROR"
-    throw
+    Write-Log "Erro fatal durante a execução do script: $($_.Exception.Message)" -Level "ERROR"
+    exit 1
 }

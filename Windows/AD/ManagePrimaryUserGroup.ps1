@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Gerencia grupos de usuários em uma OU específica no Active Directory.
+    Gerencia o grupo primeiro dos usuários em uma OU específica no Active Directory, adicinando um novo grupo primario e removendo o antigo.
 
 .DESCRIPTION
     Este script realiza três operações principais:
@@ -18,7 +18,7 @@
     Nome do grupo a ser removido dos usuários.
 
 .EXAMPLE
-    .\ManageUserGroups.ps1 -OU "OU=Agripecas,DC=agripecas,DC=net" -GroupNameToAdd "Agripecas Users" -GroupNameToRemove "Domain Users"
+    .\ManagePrimaryUserGroup.ps1 -OU "OU=Agripecas,DC=agripecas,DC=net" -GroupNameToAdd "Agripecas Users" -GroupNameToRemove "Domain Users"
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)

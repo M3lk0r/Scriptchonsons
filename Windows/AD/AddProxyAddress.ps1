@@ -35,6 +35,21 @@
     Repositório: https://github.com/M3lk0r/Powershellson
 #>
 
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+param (
+    [Parameter(Mandatory = $true, HelpMessage = "Diretório do arquivo CSV a ser importado.")]
+    [string]$CsvPath,
+
+    [Parameter(Mandatory = $false, HelpMessage = "Delimitador do CSV (; ou ,). Padrão: ';'.")]
+    [string]$Delimiter = ";",
+
+    [Parameter(Mandatory = $false, HelpMessage = "Codificação do arquivo CSV. Padrão: 'UTF8'.")]
+    [string]$Encoding = "UTF8",
+
+    [Parameter(Mandatory = $false, HelpMessage = "Sufixo do domínio para os endereços de e-mail. Exemplo: '@contoso.local'.")]
+    [string]$DomainSuffix
+)
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $logFile = "C:\logs\AddProxyAddresses.log"
@@ -66,6 +81,13 @@ function Write-Log {
     }
     catch {
         Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Get-PSVersion {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
         exit 1
     }
 }
@@ -155,12 +177,9 @@ function Add-ProxyAddresses {
 }
 
 try {
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
-        exit 1
-    }
-    
     Write-Log "Iniciando script de adição de endereços de proxy no AD."
+    
+    Get-PSVersion
 
     Import-ADModule
     $usuarios = Import-UserCSV -Path $CsvPath -Delimiter $Delimiter -Encoding $Encoding

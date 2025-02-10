@@ -16,7 +16,7 @@
     Codificação do arquivo CSV. Padrão: "UTF8"
 
 .EXAMPLE
-    .\UpdatePasswordPolicy.ps1 -CsvPath "C:\Users\adm.gomes\Desktop\passwordnerver.csv" -Delimiter ";" -Encoding "UTF8"
+    .\UpdatePasswordPolicy.ps1 -CsvPath "C:\passwordnerver.csv" -Delimiter ";" -Encoding "UTF8"
 
 .NOTES
     Autor: Eduardo Augusto Gomes(eduardo.agms@outlook.com.br)
@@ -73,6 +73,13 @@ function Write-Log {
     }
     catch {
         Write-Host "Erro ao escrever no log: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Get-PSVersion {
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
         exit 1
     }
 }
@@ -153,12 +160,9 @@ function UpdatePasswordPolicy {
 }
 
 try {
-    if ($PSVersionTable.PSVersion.Major -lt 7) {
-        Write-Log "Este script requer PowerShell 7.0 ou superior. Versão atual: $($PSVersionTable.PSVersion)" -Level "ERROR"
-        exit 1
-    }
-
     Write-Log "Iniciando script de atualização de política de senha no AD."
+
+    Get-PSVersion
 
     Import-ADModule
  
