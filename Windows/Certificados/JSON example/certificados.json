@@ -1,0 +1,17 @@
+{
+    "CaminhoPadraoCertificados": "\\caminho\\para\\certificados",
+    "Certificados": [
+        {
+            "Nome": "usuario1.p12",
+            "Senha": "senha1"
+        },
+        {
+            "Nome": "usuario2.p12",
+            "Senha": "senha2"
+        },
+        {
+            "Nome": "usuario3.p12",
+            "Senha": "senha3"
+        }
+    ]
+}
