@@ -30,21 +30,17 @@
     https://github.com/M3lk0r/Powershellson
 #>
 
-# Define as variáveis
 $origem = "C:\\Origem"
 $destino = "C:\\Destino"
 $logDir = "C:\\Logs"
 
-# Criação do diretório de logs, caso não exista
 if (-not (Test-Path -Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir | Out-Null
 }
 
-# Nome do arquivo de log
 $DataHora = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $LogFile = Join-Path -Path $LogDir -ChildPath "Copia_Arquivos_$DataHora.log"
 
-# Função para calcular hash
 function Get-FileHashValue {
     param (
         [string]$FilePath
@@ -52,7 +48,6 @@ function Get-FileHashValue {
     return (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash
 }
 
-# Função para registrar logs
 function Log {
     param (
         [string]$Message,
@@ -61,22 +56,18 @@ function Log {
     Add-Content -Path $LogFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
 }
 
-# Início da cópia
 Log "Início da cópia de arquivos."
 try {
-    # Obter todos os arquivos na origem
     $arquivosOrigem = Get-ChildItem -Path $Origem -Recurse -File
     foreach ($arquivo in $arquivosOrigem) {
         $relativoPath = $arquivo.FullName.Substring($Origem.Length)
         $destinoPath = Join-Path -Path $Destino -ChildPath $relativoPath
 
-        # Cria o diretório no destino caso não exista
         $destinoDir = Split-Path -Path $destinoPath -Parent
         if (-not (Test-Path -Path $destinoDir)) {
             New-Item -ItemType Directory -Path $destinoDir | Out-Null
         }
 
-        # Verificar se o arquivo já existe no destino
         if (Test-Path -Path $destinoPath) {
             $hashOrigem = Get-FileHashValue -FilePath $arquivo.FullName
             $hashDestino = Get-FileHashValue -FilePath $destinoPath
