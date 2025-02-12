@@ -1,2 +1,0 @@
-﻿@echo off
-powershell.exe -ExecutionPolicy Bypass -NoProfile -File "\\agripecas.net\GPOsFiles$\StartupScripts\scripts\InstalarCertificados.ps1" -GrupoCertificados "ggs_certificados_ag" -CaminhoJson "\\agripecas.net\GPOsFiles$\StartupScripts\scripts\InstalarCertificados\certificadosAG.json"

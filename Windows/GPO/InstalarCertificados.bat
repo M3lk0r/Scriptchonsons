@@ -1,0 +1,2 @@
+﻿@echo off
+powershell.exe -ExecutionPolicy RemoteSigned -NoProfile -Command "& {Start-Process -FilePath PowerShell -ArgumentList '-NoProfile -ExecutionPolicy RemoteSigned -File \"\\contoso.net\GPOsFiles$\StartupScripts\scripts\InstalarCertificados.ps1\" -GrupoCertificados \"ggs_certificados_ag\" -CaminhoJson \"\\contoso.net\GPOsFiles$\StartupScripts\scripts\InstalarCertificados\certificadosAG.json\"' -NoNewWindow -Wait}"
