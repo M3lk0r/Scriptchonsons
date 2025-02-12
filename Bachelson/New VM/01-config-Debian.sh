@@ -1,40 +1,36 @@
 ﻿#!/bin/bash
 
 # Synopsis
-#	Configures and hardens Ubuntu 24.04 VM
+#	Configures and hardens Debian 12 VM
 # Description
-#	Hardens Ubuntu, Configures sources list, secure ssh and sets other security directives.
+#	Hardens Debian, Configures sources list, secure ssh and sets other security directives.
 # Example
-#	Configure-Ubuntu.sh
+#	Configure-Debian.sh
 # Notes
-#	NAME: ConfigureUbuntu
+#	NAME: ConfigureDebian
 #	AUTHOR: eduardo.agms@outlook.com.br
 #	CREATION DATE: 10 August 2023
 #	MODIFIED DATE: 29 January 2025
 #	VERSION: 2.0
 #	CHANGE LOG:
 #	V1.0, 10 August 2023 - Initial Version.
-#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Ubuntu 24.04.
+#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Debian 12.
 
-# Check if being run as sudo
 if [ "$(id -u)" -ne 0 ]; then
     echo "Access denied! Run as SUDO"
     exit 1
 fi
 
-# Log file
-LOGFILE="/var/log/configure-ubuntu.log"
+LOGFILE="/var/log/configure-debian.log"
 BACKUP_DIR="/opt/backup"
 mkdir -p "$BACKUP_DIR"
 
-# Function to log messages
 log() {
     local level=$1
     local message=$2
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" | tee -a "$LOGFILE"
 }
 
-# Function to check command success
 check_success() {
     if [ $? -ne 0 ]; then
         log "ERROR" "Command failed: $1"
@@ -42,7 +38,6 @@ check_success() {
     fi
 }
 
-# Configure firewall
 configure_firewall() {
     log "INFO" "Configuring firewall..."
     ufw default deny incoming
@@ -53,7 +48,6 @@ configure_firewall() {
     check_success "Firewall configuration"
 }
 
-# Configure sources.list
 configure_sources() {
     log "INFO" "Configuring sources.list..."
     mkdir -p "$BACKUP_DIR"
@@ -61,38 +55,31 @@ configure_sources() {
     check_success "Backup sources.list"
 
     cat << 'EOL' | tee /etc/apt/sources.list > /dev/null
-# Mirror C3SL/UFPR
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-security main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-updates main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-proposed main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-backports main restricted universe multiverse
+# Debian 12 Bookworm
+deb http://deb.debian.org/debian bookworm main contrib non-free
+deb-src http://deb.debian.org/debian bookworm main contrib non-free
 
-# Mirror UEPG
-deb https://mirror.uepg.br/ubuntu/ jammy main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-updates main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-security main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-proposed main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-backports main restricted universe multiverse
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free
+deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free
+
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free
+deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free
 EOL
     check_success "Create new sources.list"
 }
 
-# Update and upgrade system
 update_system() {
     log "INFO" "Updating and upgrading system..."
     apt update -y && apt upgrade -y && apt full-upgrade -y && apt autoremove -y
     check_success "System update and upgrade"
 }
 
-# Install necessary packages
 install_packages() {
     log "INFO" "Installing packages..."
-    apt install -y ncdu gparted parted open-vm-tools git htop ntp ntpdate
+    apt install -y ncdu gparted parted open-vm-tools git htop ntp ntpdate ufw
     check_success "Package installation"
 }
 
-# Configure SSH
 configure_ssh() {
     log "INFO" "Configuring SSH..."
     cp /etc/ssh/sshd_config "$BACKUP_DIR/sshd_config.bak"
@@ -108,11 +95,10 @@ configure_ssh() {
     sed -i '/Port 65222/ i\Protocol 2' /etc/ssh/sshd_config
     sed -i '/PermitRootLogin no/ a\AllowUsers infra' /etc/ssh/sshd_config
 
-    systemctl restart sshd
+    systemctl restart ssh
     check_success "SSH configuration"
 }
 
-# Configure MOTD
 configure_motd() {
     log "INFO" "Configuring MOTD..."
     cat << 'EOL' | tee /etc/motd > /dev/null
@@ -132,7 +118,6 @@ EOL
     check_success "MOTD configuration"
 }
 
-# Configure sysctl
 configure_sysctl() {
     log "INFO" "Configuring sysctl..."
     mv /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
@@ -171,14 +156,12 @@ EOL
     check_success "Sysctl configuration"
 }
 
-# Configure NTP
 configure_ntp() {
     log "INFO" "Configuring NTP..."
-    sed -i 's/pool 0.ubuntu.pool.ntp.org iburst/#pool 0.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 1.ubuntu.pool.ntp.org iburst/#pool 1.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 2.ubuntu.pool.ntp.org iburst/#pool 2.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 3.ubuntu.pool.ntp.org iburst/#pool 3.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool ntp.ubuntu.com/#pool ntp.ubuntu.com/g' /etc/ntp.conf
+    sed -i 's/pool 0.debian.pool.ntp.org iburst/#pool 0.debian.pool.ntp.org iburst/g' /etc/ntp.conf
+    sed -i 's/pool 1.debian.pool.ntp.org iburst/#pool 1.debian.pool.ntp.org iburst/g' /etc/ntp.conf
+    sed -i 's/pool 2.debian.pool.ntp.org iburst/#pool 2.debian.pool.ntp.org iburst/g' /etc/ntp.conf
+    sed -i 's/pool 3.debian.pool.ntp.org iburst/#pool 3.debian.pool.ntp.org iburst/g' /etc/ntp.conf
     sed -i 's/restrict -4 default kod notrap nomodify nopeer noquery limited/#restrict -4 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
     sed -i 's/restrict -6 default kod notrap nomodify nopeer noquery limited/#restrict -6 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
 
@@ -201,8 +184,7 @@ EOL
     check_success "NTP configuration"
 }
 
-# Main script execution
-log "INFO" "Starting Ubuntu configuration and hardening..."
+log "INFO" "Starting Debian configuration and hardening..."
 configure_firewall
 configure_sources
 update_system
