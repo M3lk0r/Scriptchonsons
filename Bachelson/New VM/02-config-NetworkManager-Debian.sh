@@ -1,20 +1,20 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Synopsis
-#	Changes Ubuntu 24.04 default netplan configuration to NetworkManager
+#       Changes Debian 12 default network configuration to NetworkManager
 # Description
-#	Changes Ubuntu 24.04 default netplan configuration to NetworkManager
+#       Changes Debian 12 default network configuration to NetworkManager
 # Example
-#	Config-NetworkManager.sh
+#       Config-NetworkManager.sh
 # Notes
 # NAME: Config-NetworkManager
-#	AUTHOR: eduardo.agms@outlook.com.br
-#	CREATION DATE: 10 August 2023
-#	MODIFIED DATE: 29 January 2025
-#	VERSION: 2.0
-#	CHANGE LOG:
-#	V1.0, 10 August 2023 - Initial Version.
-#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Ubuntu 24.04.
+#       AUTHOR: eduardo.agms@outlook.com.br
+#       CREATION DATE: 10 August 2023
+#       MODIFIED DATE: 29 January 2025
+#       VERSION: 2.0
+#       CHANGE LOG:
+#       V1.0, 10 August 2023 - Initial Version.
+#       V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Debian 12.
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Access denied! Run as SUDO"
@@ -36,9 +36,9 @@ check_success() {
     fi
 }
 
-check_ubuntu_version() {
-    if [ "$(lsb_release -rs)" != "24.04" ]; then
-        log "ERROR" "This script is only compatible with Ubuntu 24.04."
+check_debian_version() {
+    if [ "$(lsb_release -rs)" != "12" ]; then
+        log "ERROR" "This script is only compatible with Debian 12."
         exit 1
     fi
 }
@@ -54,9 +54,26 @@ install_network_manager() {
     fi
 }
 
+install_netplan() {
+    log "INFO" "Installing Netplan..."
+    if ! command -v netplan &> /dev/null; then
+        apt update -y
+        apt install -y netplan.io
+        check_success "Netplan installation"
+    else
+        log "INFO" "Netplan is already installed."
+    fi
+
+    if [ ! -d "/etc/netplan" ]; then
+        log "INFO" "Creating /etc/netplan directory..."
+        mkdir -p /etc/netplan
+        check_success "Create /etc/netplan directory"
+    fi
+}
+
 configure_netplan() {
     log "INFO" "Configuring netplan..."
-    NETPLAN_FILE="/etc/netplan/00-installer-config.yaml"
+    NETPLAN_FILE="/etc/netplan/01-netcfg.yaml"
     BACKUP_FILE="$NETPLAN_FILE.bak"
 
     if [ -f "$NETPLAN_FILE" ]; then
@@ -72,9 +89,16 @@ network:
   renderer: NetworkManager
 EOL
 
-    netplan generate
+    chmod 600 "$NETPLAN_FILE"
+    log "INFO" "Fixed permissions for $NETPLAN_FILE."
+
+    log "INFO" "Validating netplan configuration..."
+    netplan generate --debug
+    check_success "Netplan generate"
+
+    log "INFO" "Applying netplan configuration..."
     netplan apply
-    check_success "Netplan configuration"
+    check_success "Netplan apply"
 }
 
 configure_network_manager() {
@@ -111,8 +135,9 @@ disable_network_services() {
 }
 
 log "INFO" "Starting NetworkManager configuration..."
-check_ubuntu_version
+check_debian_version
 install_network_manager
+install_netplan
 configure_netplan
 configure_network_manager
 disable_network_services

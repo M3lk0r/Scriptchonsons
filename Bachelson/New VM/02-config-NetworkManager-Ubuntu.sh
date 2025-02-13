@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Synopsis
 #	Changes Ubuntu 24.04 default netplan configuration to NetworkManager

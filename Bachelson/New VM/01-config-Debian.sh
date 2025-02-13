@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 
 # Synopsis
 #	Configures and hardens Debian 12 VM
@@ -39,6 +39,8 @@ check_success() {
 }
 
 configure_firewall() {
+    apt update && apt install ufw -y
+    systemctl start ufw
     log "INFO" "Configuring firewall..."
     ufw default deny incoming
     ufw default allow outgoing
@@ -53,7 +55,7 @@ configure_sources() {
     mkdir -p "$BACKUP_DIR"
     mv /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
     check_success "Backup sources.list"
-
+    
     cat << 'EOL' | tee /etc/apt/sources.list > /dev/null
 # Debian 12 Bookworm
 deb http://deb.debian.org/debian bookworm main contrib non-free
@@ -84,7 +86,7 @@ configure_ssh() {
     log "INFO" "Configuring SSH..."
     cp /etc/ssh/sshd_config "$BACKUP_DIR/sshd_config.bak"
     check_success "Backup SSH config"
-
+    
     sed -i 's/#Port 22/Port 65222/g' /etc/ssh/sshd_config
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/g' /etc/ssh/sshd_config
     sed -i 's/#MaxAuthTries 6/MaxAuthTries 3/g' /etc/ssh/sshd_config
@@ -94,7 +96,7 @@ configure_ssh() {
     sed -i 's/#PrintLastLog/PrintLastLog/g' /etc/ssh/sshd_config
     sed -i '/Port 65222/ i\Protocol 2' /etc/ssh/sshd_config
     sed -i '/PermitRootLogin no/ a\AllowUsers infra' /etc/ssh/sshd_config
-
+    
     systemctl restart ssh
     check_success "SSH configuration"
 }
@@ -122,12 +124,11 @@ configure_sysctl() {
     log "INFO" "Configuring sysctl..."
     mv /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
     check_success "Backup sysctl.conf"
-
+    
     cat << 'EOL' | tee /etc/sysctl.conf > /dev/null
 # Security settings
 kernel.core_uses_pid = 1
-kernel.exec-shield = 1
-kernel.randomize_va_space = 1
+kernel.randomize_va_space = 2  # Enable ASLR
 fs.file-max = 65535
 kernel.pid_max = 65536
 net.ipv4.ip_forward = 0
@@ -151,7 +152,7 @@ net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOL
-
+    
     sysctl -p
     check_success "Sysctl configuration"
 }
@@ -164,7 +165,7 @@ configure_ntp() {
     sed -i 's/pool 3.debian.pool.ntp.org iburst/#pool 3.debian.pool.ntp.org iburst/g' /etc/ntp.conf
     sed -i 's/restrict -4 default kod notrap nomodify nopeer noquery limited/#restrict -4 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
     sed -i 's/restrict -6 default kod notrap nomodify nopeer noquery limited/#restrict -6 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
-
+    
     cat << 'EOL' | tee -a /etc/ntp.conf > /dev/null
 # NTP security settings
 restrict -4 ignore
@@ -178,10 +179,16 @@ server 200.189.40.8
 server 200.192.232.8
 server 200.160.7.193
 EOL
-
+    
     ntpdate -u 200.160.7.186
     systemctl restart ntp
     check_success "NTP configuration"
+}
+
+configure_path() {
+    echo 'export PATH=$PATH:/sbin:/usr/sbin' >> ~/.bashrc
+    source ~/.bashrc
+    echo 'export PATH=$PATH:/sbin:/usr/sbin' | tee -a /etc/profile
 }
 
 log "INFO" "Starting Debian configuration and hardening..."
@@ -193,6 +200,7 @@ configure_ssh
 configure_motd
 configure_sysctl
 configure_ntp
+configure_path
 
 log "INFO" "Configuration completed successfully. Rebooting..."
 reboot
