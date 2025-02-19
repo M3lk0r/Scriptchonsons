@@ -1,6 +1,6 @@
 # Scriptchonsons
 
-![License](https://img.shields.io/badge/license-LGPL--2.1-blue.svg)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![PowerShell](https://img.shields.io/badge/language-PowerShell-blue)
 ![GitHub](https://img.shields.io/github/license/M3lk0r/Scriptchonsons)
 
@@ -104,7 +104,7 @@ Por favor, certifique-se de que seu código segue as melhores práticas e que to
 
 ## 🐜 Licença
 
-Este projeto está licenciado sob a Licença LGPL-2.1. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+Este projeto está licenciado sob a Licença Apache 2.0. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
 
 ## Contato
 
