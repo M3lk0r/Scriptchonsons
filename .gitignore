@@ -1,0 +1,32 @@
+# .gitignore
+Bachelson/New VM Pagao/
+
+# Ignore other files
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.env
+
+# Ignore directories
+.vscode/
+__pycache__/
+.venv/
+env/
+node_modules/
+build/
+dist/
+target/
+logs/
+tmp/
+backup/
+cache/
+coverage/
+report/
+results/
+test-results/
+test-reports/
+test-output/
+test-logs/
+test-cache/
