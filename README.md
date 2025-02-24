@@ -51,30 +51,6 @@
    cd Scriptchonsons
    ```
 
-## 🚀 Como Usar
-
-1. **Executar o Script de Backup:**
-
-   Navegue até o diretório `Bachelson` e execute o script `backup.bat`:
-
-   ```bash
-   cd Bachelson
-   backup.bat
-   ```
-
-   Este script realizará o backup dos diretórios especificados.
-
-2. **Executar o Script de Limpeza:**
-
-   Navegue até o diretório `Powershellson` e execute o script `cleanup.ps1`:
-
-   ```bash
-   cd Powershellson
-   powershell -ExecutionPolicy Bypass -File cleanup.ps1
-   ```
-
-   Este script efetuará a limpeza de arquivos temporários e desnecessários do sistema.
-
 ## 🤝 Contribuição
 
 Contribuições são bem-vindas! Se você deseja melhorar ou adicionar novos scripts, siga os passos abaixo:
