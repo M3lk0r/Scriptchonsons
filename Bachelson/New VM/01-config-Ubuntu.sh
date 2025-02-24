@@ -1,25 +1,17 @@
 #!/bin/bash
 
 # Synopsis
-#	Configures and hardens Ubuntu 24.04 VM
+#   Configures and hardens Ubuntu 24.04 VM
 # Description
-#	Hardens Ubuntu, Configures sources list, secure ssh and sets other security directives.
+#   Hardens Ubuntu, configures sources list, secures SSH, and applies security directives.
 # Example
-#	Configure-Ubuntu.sh
+#   sudo ./configure-ubuntu.sh
 # Notes
-#	NAME: ConfigureUbuntu
-#	AUTHOR: eduardo.agms@outlook.com.br
-#	CREATION DATE: 10 August 2023
-#	MODIFIED DATE: 29 January 2025
-#	VERSION: 2.0
-#	CHANGE LOG:
-#	V1.0, 10 August 2023 - Initial Version.
-#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Ubuntu 24.04.
+#   AUTHOR: eduardo.agms@outlook.com.br
+#   VERSION: 2.1
+#   LAST MODIFIED: 21 February 2025
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Access denied! Run as SUDO"
-    exit 1
-fi
+set -e
 
 LOGFILE="/var/log/configure-ubuntu.log"
 BACKUP_DIR="/opt/backup"
@@ -32,56 +24,75 @@ log() {
 }
 
 check_success() {
-    if [ $? -ne 0 ]; then
-        log "ERROR" "Command failed: $1"
+    local status=$?
+    local action="$1"
+    if [ $status -ne 0 ]; then
+        log "ERROR" "Falha ao executar: $action"
         exit 1
     fi
 }
 
+trap 'log "ERROR" "Erro inesperado! Saindo..."' ERR
+
+if [ "$(id -u)" -ne 0 ]; then
+    log "ERROR" "Acesso negado! Execute como root (sudo)."
+    exit 1
+fi
+
 configure_firewall() {
-    log "INFO" "Configuring firewall..."
+    log "INFO" "Configurando firewall..."
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow 65222/tcp
+    ufw allow 65222/udp
     ufw enable
     ufw reload
-    check_success "Firewall configuration"
+    check_success "Configuração do firewall"
 }
 
 configure_sources() {
-    log "INFO" "Configuring sources.list..."
-    mkdir -p "$BACKUP_DIR"
-    mv /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
-    check_success "Backup sources.list"
+    log "INFO" "Configurando repositórios (sources.list)..."
+    cp /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
 
-    cat << 'EOL' | tee /etc/apt/sources.list > /dev/null
-# Mirror C3SL/UFPR
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-security main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-updates main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-proposed main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ jammy-backports main restricted universe multiverse
+    cat << 'EOL' > /etc/apt/sources.list
+# Mirror C3SL/UFPR (Ubuntu 24.04 - Noble Numbat)
+deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble main restricted universe multiverse
+deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-security main restricted universe multiverse
+deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-updates main restricted universe multiverse
+deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-backports main restricted universe multiverse
 
 # Mirror UEPG
-deb https://mirror.uepg.br/ubuntu/ jammy main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-updates main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-security main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-proposed main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ jammy-backports main restricted universe multiverse
+deb https://mirror.uepg.br/ubuntu/ noble main restricted universe multiverse
+deb https://mirror.uepg.br/ubuntu/ noble-updates main restricted universe multiverse
+deb https://mirror.uepg.br/ubuntu/ noble-security main restricted universe multiverse
+deb https://mirror.uepg.br/ubuntu/ noble-backports main restricted universe multiverse
 EOL
-    check_success "Create new sources.list"
+
+    check_success "Repositórios configurados"
 }
 
 update_system() {
-    log "INFO" "Updating and upgrading system..."
-    apt update -y && apt upgrade -y && apt full-upgrade -y && apt autoremove -y
-    check_success "System update and upgrade"
+    log "INFO" "Atualizando sistema..."
+    apt update && apt upgrade -y && apt autoremove -y
+    check_success "Atualização do sistema"
 }
 
 install_packages() {
-    log "INFO" "Installing packages..."
-    apt install -y ncdu gparted parted open-vm-tools git htop ntp ntpdate
-    check_success "Package installation"
+    log "INFO" "Instalando pacotes essenciais..."
+    apt install -y curl wget unzip ufw fail2ban htop ntp net-tools ncdu open-vm-tools git ntpdate
+    check_success "Instalação de pacotes"
+}
+
+restart_ssh() {
+    if systemctl list-units --full -all | grep -q sshd.service; then
+        systemctl restart sshd
+    elif systemctl list-units --full -all | grep -q ssh.service; then
+        systemctl restart ssh
+    else
+        log "ERROR" "Neither sshd nor ssh service found!"
+        exit 1
+    fi
+    check_success "SSH service restart"
 }
 
 configure_ssh() {
@@ -99,16 +110,16 @@ configure_ssh() {
     sed -i '/Port 65222/ i\Protocol 2' /etc/ssh/sshd_config
     sed -i '/PermitRootLogin no/ a\AllowUsers infra' /etc/ssh/sshd_config
 
-    systemctl restart sshd
-    check_success "SSH configuration"
+    restart_ssh
 }
 
 configure_motd() {
-    log "INFO" "Configuring MOTD..."
-    cat << 'EOL' | tee /etc/motd > /dev/null
+    log "INFO" "Configurando mensagem de login (MOTD)..."
+    cat << 'EOL' > /etc/motd
+
 ####################################################
-#     _____            _						   #
-#    / ____|          | |						   #
+#     _____            _                           #
+#    / ____|          | |                          #
 #   | |     ___  _ __ | |_ ___  ___  ___           #
 #   | |    / _ \| '_ \| __/ _ \/ __|/ _ \          #
 #   | |___| (_) | | | | || (_) \__ \ (_) |         #
@@ -119,15 +130,15 @@ configure_motd() {
 #                                                  #
 ####################################################
 EOL
-    check_success "MOTD configuration"
+    check_success "Configuração do MOTD"
 }
 
 configure_sysctl() {
-    log "INFO" "Configuring sysctl..."
-    mv /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
-    check_success "Backup sysctl.conf"
+    log "INFO" "Configurando parâmetros de segurança (sysctl)..."
+    cp /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
 
     cat << 'EOL' | tee /etc/sysctl.conf > /dev/null
+    
 # Security settings
 kernel.core_uses_pid = 1
 kernel.exec-shield = 1
@@ -156,40 +167,48 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOL
 
-    sysctl -p
-    check_success "Sysctl configuration"
+    sysctl --system
+    check_success "Configuração do sysctl"
 }
 
 configure_ntp() {
-    log "INFO" "Configuring NTP..."
-    sed -i 's/pool 0.ubuntu.pool.ntp.org iburst/#pool 0.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 1.ubuntu.pool.ntp.org iburst/#pool 1.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 2.ubuntu.pool.ntp.org iburst/#pool 2.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 3.ubuntu.pool.ntp.org iburst/#pool 3.ubuntu.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool ntp.ubuntu.com/#pool ntp.ubuntu.com/g' /etc/ntp.conf
-    sed -i 's/restrict -4 default kod notrap nomodify nopeer noquery limited/#restrict -4 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
-    sed -i 's/restrict -6 default kod notrap nomodify nopeer noquery limited/#restrict -6 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
+    log "INFO" "Configurando NTP..."
+    cp /etc/ntp.conf "$BACKUP_DIR/ntp.conf.bak"
 
-    cat << 'EOL' | tee -a /etc/ntp.conf > /dev/null
-# NTP security settings
-restrict -4 ignore
-restrict -6 ignore
-server 200.160.7.186
-server 201.49.148.135
-server 200.186.125.195
-server 200.20.186.76
-server 200.160.0.8
-server 200.189.40.8
-server 200.192.232.8
-server 200.160.7.193
+    cat << 'EOL' > /etc/ntp.conf
+# Configuração de servidores NTP confiáveis
+server 200.160.7.186 iburst
+server 201.49.148.135 iburst
+server 200.186.125.195 iburst
+server 200.20.186.76 iburst
+server 200.160.0.8 iburst
 EOL
 
-    ntpdate -u 200.160.7.186
     systemctl restart ntp
-    check_success "NTP configuration"
+    check_success "Configuração do NTP"
 }
 
-log "INFO" "Starting Ubuntu configuration and hardening..."
+configure_fail2ban() {
+    log "INFO" "Configurando Fail2Ban..."
+    cp /etc/fail2ban/jail.local "$BACKUP_DIR/jail.local.bak" || touch /etc/fail2ban/jail.local
+
+    cat << 'EOL' > /etc/fail2ban/jail.local
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 3
+ignoreip = 127.0.0.1/8
+
+[sshd]
+enabled = true
+port = 65222
+EOL
+
+    systemctl restart fail2ban
+    check_success "Configuração do Fail2Ban"
+}
+
+log "INFO" "Iniciando configuração do servidor Ubuntu 24.04..."
 configure_firewall
 configure_sources
 update_system
@@ -198,6 +217,7 @@ configure_ssh
 configure_motd
 configure_sysctl
 configure_ntp
+configure_fail2ban
 
-log "INFO" "Configuration completed successfully. Rebooting..."
+log "INFO" "Configuração concluída com sucesso. Reiniciando..."
 reboot

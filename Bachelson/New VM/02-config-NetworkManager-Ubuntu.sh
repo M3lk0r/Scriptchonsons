@@ -11,10 +11,11 @@
 #	AUTHOR: eduardo.agms@outlook.com.br
 #	CREATION DATE: 10 August 2023
 #	MODIFIED DATE: 29 January 2025
-#	VERSION: 2.0
+#	VERSION: 2.1
 #	CHANGE LOG:
 #	V1.0, 10 August 2023 - Initial Version.
 #	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Ubuntu 24.04.
+#	V2.1, 21 February 2025 - Optimized service checks, improved error handling, and added optional reboot.
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Access denied! Run as SUDO"
@@ -22,6 +23,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 LOGFILE="/var/log/config-networkmanager.log"
+NETPLAN_FILE="/etc/netplan/00-installer-config.yaml"
+NM_CONF_FILE="/etc/NetworkManager/conf.d/manage-all.conf"
+AUTO_REBOOT=true
 
 log() {
     local level=$1
@@ -30,8 +34,9 @@ log() {
 }
 
 check_success() {
+    local last_command=$1
     if [ $? -ne 0 ]; then
-        log "ERROR" "Command failed: $1"
+        log "ERROR" "Command failed: $last_command"
         exit 1
     fi
 }
@@ -44,10 +49,10 @@ check_ubuntu_version() {
 }
 
 install_network_manager() {
-    log "INFO" "Installing NetworkManager..."
-    if ! command -v NetworkManager &> /dev/null; then
-        apt update -y
-        apt install -y network-manager
+    log "INFO" "Checking if NetworkManager is installed..."
+    if ! dpkg -l | grep -qw network-manager; then
+        log "INFO" "Installing NetworkManager..."
+        apt update -y && apt install -y network-manager
         check_success "NetworkManager installation"
     else
         log "INFO" "NetworkManager is already installed."
@@ -56,11 +61,8 @@ install_network_manager() {
 
 configure_netplan() {
     log "INFO" "Configuring netplan..."
-    NETPLAN_FILE="/etc/netplan/00-installer-config.yaml"
-    BACKUP_FILE="$NETPLAN_FILE.bak"
-
     if [ -f "$NETPLAN_FILE" ]; then
-        mv "$NETPLAN_FILE" "$BACKUP_FILE"
+        cp "$NETPLAN_FILE" "$NETPLAN_FILE.bak"
         check_success "Backup netplan configuration"
     fi
 
@@ -72,22 +74,18 @@ network:
   renderer: NetworkManager
 EOL
 
-    netplan generate
-    netplan apply
+    netplan generate && netplan apply
     check_success "Netplan configuration"
 }
 
 configure_network_manager() {
     log "INFO" "Configuring NetworkManager..."
-    NM_CONF_FILE="/etc/NetworkManager/conf.d/manage-all.conf"
-
     cat << 'EOL' | tee "$NM_CONF_FILE" > /dev/null
 [keyfile]
 unmanaged-devices=none
 EOL
 
-    systemctl enable NetworkManager
-    systemctl restart NetworkManager
+    systemctl enable --now NetworkManager
     check_success "NetworkManager configuration"
 }
 
@@ -101,11 +99,11 @@ disable_network_services() {
     )
 
     for service in "${SERVICES[@]}"; do
-        if systemctl is-active --quiet "$service"; then
+        if systemctl list-units --full -all | grep -q "$service"; then
             systemctl mask "$service"
-            check_success "Disable $service"
+            check_success "Masked $service"
         else
-            log "INFO" "$service is already disabled."
+            log "INFO" "$service is already masked or inactive."
         fi
     done
 }
@@ -117,5 +115,10 @@ configure_netplan
 configure_network_manager
 disable_network_services
 
-log "INFO" "NetworkManager configuration completed successfully. Rebooting..."
-reboot
+log "INFO" "NetworkManager configuration completed successfully."
+if [ "$AUTO_REBOOT" = true ]; then
+    log "INFO" "Rebooting system..."
+    reboot
+else
+    log "INFO" "Reboot required. Please restart manually."
+fi
