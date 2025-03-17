@@ -1,27 +1,26 @@
 #!/bin/bash
 
 # Synopsis
-#	Prepares Debian VM to be used as VMWare VM Template.
+#   Prepares Ubuntu VM to be used as VMWare VM Template.
 # Description
-#	Clears logs, resets hostname, resets network config, resets machine-id, and clears temp files/folders.
+#   Clears logs, resets hostname, resets network config, resets machine-id, and clears temp files/folders.
 # Example
-#	SysprepDebian.sh
+#   sudo ./SysprepUbuntu.sh
 # Notes
-#	NAME: SysprepDebian
-#	AUTHOR: eduardo.agms@outlook.com.br
-#	CREATION DATE: 10 August 2023
-#	MODIFIED DATE: 29 January 2025
-#	VERSION: 2.0
-#	CHANGE LOG:
-#	V1.0, 10 August 2023 - Initial Version.
-#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Debian 12.
+#   NAME: SysprepUbuntu
+#   AUTHOR: eduardo.agms@outlook.com.br
+#   VERSION: 2.2
+#   CHANGE LOG:
+#   V1.0, 10 August 2023 - Initial Version.
+#   V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Ubuntu 24.04.
+#   V2.1, 12 March 2025 - Added dependency checks, improved backups, and better error handling.
+#   V2.2, 13 March 2025 - Preserved user 'infra', ensured installed packages are kept, and improved cleanup.
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Access denied! Run as SUDO"
-    exit 1
-fi
+set -e
 
-LOGFILE="/var/log/sysprep-debian.log"
+LOGFILE="/var/log/sysprep-ubuntu.log"
+BACKUP_DIR="/opt/backup/sysprep"
+AUTO_SHUTDOWN=true
 
 log() {
     local level=$1
@@ -30,16 +29,55 @@ log() {
 }
 
 check_success() {
+    local last_command=$1
     if [ $? -ne 0 ]; then
-        log "ERROR" "Command failed: $1"
+        log "ERROR" "Command failed: $last_command"
         exit 1
     fi
 }
 
-stop_rsyslog() {
-    log "INFO" "Stopping rsyslog service..."
-    systemctl stop rsyslog
-    check_success "Stop rsyslog service"
+rollback() {
+    log "ERROR" "An error occurred. Rolling back changes..."
+    if [ -f "$BACKUP_DIR/hostname.bak" ]; then
+        cp "$BACKUP_DIR/hostname.bak" /etc/hostname
+    fi
+    if [ -f "$BACKUP_DIR/machine-id.bak" ]; then
+        cp "$BACKUP_DIR/machine-id.bak" /etc/machine-id
+    fi
+    log "INFO" "Rollback completed."
+    exit 1
+}
+
+trap rollback ERR
+
+if [ "$(id -u)" -ne 0 ]; then
+    log "ERROR" "Access denied! Run as SUDO"
+    exit 1
+fi
+
+check_ubuntu_version() {
+    if [ "$(lsb_release -rs)" != "24.04" ]; then
+        log "ERROR" "This script is only compatible with Ubuntu 24.04."
+        exit 1
+    fi
+}
+
+stop_services() {
+    log "INFO" "Stopping unnecessary services..."
+    SERVICES=(
+        "rsyslog"
+        "systemd-networkd"
+        "systemd-networkd-wait-online"
+        "networkd-dispatcher"
+    )
+    for service in "${SERVICES[@]}"; do
+        if systemctl is-active --quiet "$service"; then
+            systemctl stop "$service"
+            check_success "Stop $service"
+        else
+            log "INFO" "$service is already stopped."
+        fi
+    done
 }
 
 clear_audit_logs() {
@@ -79,7 +117,7 @@ ExecStart=/runOnce.sh
 WantedBy=multi-user.target
 EOL
     check_success "Create sysprep.service"
-    
+
     cat << 'EOL' | tee /runOnce.sh > /dev/null
 #!/bin/bash
 test -f /etc/ssh/ssh_host_dsa_key || dpkg-reconfigure openssh-server
@@ -89,7 +127,7 @@ rm -f /etc/systemd/system/sysprep.service
 rm -f /runOnce.sh
 EOL
     check_success "Create /runOnce.sh"
-    
+
     chmod +x /runOnce.sh
     systemctl enable sysprep.service
     check_success "Enable sysprep.service"
@@ -97,6 +135,8 @@ EOL
 
 reset_hostname() {
     log "INFO" "Resetting hostname..."
+    mkdir -p "$BACKUP_DIR"
+    cp /etc/hostname "$BACKUP_DIR/hostname.bak"
     sed -i 's/preserve_hostname: false/preserve_hostname: true/g' /etc/cloud/cloud.cfg
     truncate -s0 /etc/hostname
     hostnamectl set-hostname localhost
@@ -111,6 +151,8 @@ clear_apt_cache() {
 
 reset_machine_id() {
     log "INFO" "Resetting machine-id..."
+    mkdir -p "$BACKUP_DIR"
+    cp /etc/machine-id "$BACKUP_DIR/machine-id.bak"
     truncate -s0 /etc/machine-id
     rm -f /var/lib/dbus/machine-id
     ln -s /etc/machine-id /var/lib/dbus/machine-id
@@ -131,8 +173,9 @@ clear_shell_history() {
     check_success "Clear shell history"
 }
 
-log "INFO" "Starting Debian sysprep..."
-stop_rsyslog
+log "INFO" "Starting Ubuntu sysprep..."
+check_ubuntu_version
+stop_services
 clear_audit_logs
 clean_temp_files
 clear_ssh_keys
@@ -143,5 +186,10 @@ reset_machine_id
 clear_cloud_init_logs
 clear_shell_history
 
-log "INFO" "Sysprep completed successfully. Shutting down..."
-shutdown -h now
+log "INFO" "Sysprep completed successfully."
+if [ "$AUTO_SHUTDOWN" = true ]; then
+    log "INFO" "Shutting down..."
+    shutdown -h now
+else
+    log "INFO" "Shutdown required. Please shut down manually."
+fi

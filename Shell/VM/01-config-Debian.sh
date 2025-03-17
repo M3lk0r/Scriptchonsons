@@ -1,25 +1,22 @@
 #!/bin/bash
 
 # Synopsis
-#	Configures and hardens Debian 12 VM
+#   Configures and hardens Debian 12 VM
 # Description
-#	Hardens Debian, Configures sources list, secure ssh and sets other security directives.
+#   Hardens Debian, configures sources list, secures SSH, and applies security directives.
 # Example
-#	Configure-Debian.sh
+#   sudo ./Configure-Debian.sh
 # Notes
-#	NAME: ConfigureDebian
-#	AUTHOR: eduardo.agms@outlook.com.br
-#	CREATION DATE: 10 August 2023
-#	MODIFIED DATE: 29 January 2025
-#	VERSION: 2.0
-#	CHANGE LOG:
-#	V1.0, 10 August 2023 - Initial Version.
-#	V2.0, 29 January 2025 - Improved error handling, logging, modularity and compatibility with Debian 12.
+#   NAME: ConfigureDebian
+#   AUTHOR: eduardo.agms@outlook.com.br
+#   VERSION: 2.2
+#   CHANGE LOG:
+#   V1.0, 10 August 2023 - Initial Version.
+#   V2.0, 29 January 2025 - Improved error handling, logging, modularity, and compatibility with Debian 12.
+#   V2.1, 12 March 2025 - Added rollback, improved checks, and added trap for interruptions.
+#   V2.2, 13 March 2025 - Added dependency checks, improved backups, and better error handling.
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Access denied! Run as SUDO"
-    exit 1
-fi
+set -e
 
 LOGFILE="/var/log/configure-debian.log"
 BACKUP_DIR="/opt/backup"
@@ -38,22 +35,52 @@ check_success() {
     fi
 }
 
+rollback() {
+    log "ERROR" "An error occurred. Rolling back changes..."
+    if [ -f "$BACKUP_DIR/sources.list.bak" ]; then
+        mv "$BACKUP_DIR/sources.list.bak" /etc/apt/sources.list
+    fi
+    if [ -f "$BACKUP_DIR/sshd_config.bak" ]; then
+        mv "$BACKUP_DIR/sshd_config.bak" /etc/ssh/sshd_config
+        systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+    fi
+    if [ -f "$BACKUP_DIR/sysctl.conf.bak" ]; then
+        mv "$BACKUP_DIR/sysctl.conf.bak" /etc/sysctl.conf
+        sysctl -p
+    fi
+    if [ -f "$BACKUP_DIR/jail.local.bak" ]; then
+        mv "$BACKUP_DIR/jail.local.bak" /etc/fail2ban/jail.local
+        systemctl restart fail2ban
+    fi
+    log "INFO" "Rollback completed."
+    exit 1
+}
+
+trap rollback ERR
+
+if [ "$(id -u)" -ne 0 ]; then
+    log "ERROR" "Access denied! Run as SUDO"
+    exit 1
+fi
+
 configure_firewall() {
-    apt update && apt install ufw -y
-    systemctl start ufw
     log "INFO" "Configuring firewall..."
+    apt update && apt install ufw -y
+    check_success "Install UFW"
+    
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow 65222/tcp
     ufw enable
     ufw reload
+    
+    ufw status | grep -q "Status: active"
     check_success "Firewall configuration"
 }
 
 configure_sources() {
     log "INFO" "Configuring sources.list..."
-    mkdir -p "$BACKUP_DIR"
-    mv /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
+    cp /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
     check_success "Backup sources.list"
     
     cat << 'EOL' | tee /etc/apt/sources.list > /dev/null
@@ -67,19 +94,21 @@ deb-src http://security.debian.org/debian-security bookworm-security main contri
 deb http://deb.debian.org/debian bookworm-updates main contrib non-free
 deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free
 EOL
-    check_success "Create new sources.list"
+    
+    apt update
+    check_success "Configure sources.list"
 }
 
 update_system() {
-    log "INFO" "Updating and upgrading system..."
-    apt update -y && apt upgrade -y && apt full-upgrade -y && apt autoremove -y
-    check_success "System update and upgrade"
+    log "INFO" "Updating system..."
+    apt update && apt upgrade -y && apt autoremove -y
+    check_success "System update"
 }
 
 install_packages() {
-    log "INFO" "Installing packages..."
-    apt install -y ncdu gparted parted open-vm-tools git htop ntp ntpdate ufw
-    check_success "Package installation"
+    log "INFO" "Installing essential packages..."
+    apt install -y curl wget unzip ufw fail2ban htop ntp net-tools ncdu open-vm-tools git ntpdate
+    check_success "Install packages"
 }
 
 configure_ssh() {
@@ -117,18 +146,18 @@ configure_motd() {
 #                                                  #
 ####################################################
 EOL
-    check_success "MOTD configuration"
+    check_success "Configure MOTD"
 }
 
 configure_sysctl() {
     log "INFO" "Configuring sysctl..."
-    mv /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
+    cp /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
     check_success "Backup sysctl.conf"
     
     cat << 'EOL' | tee /etc/sysctl.conf > /dev/null
 # Security settings
 kernel.core_uses_pid = 1
-kernel.randomize_va_space = 2  # Enable ASLR
+kernel.randomize_va_space = 2
 fs.file-max = 65535
 kernel.pid_max = 65536
 net.ipv4.ip_forward = 0
@@ -154,41 +183,28 @@ net.ipv6.conf.lo.disable_ipv6 = 1
 EOL
     
     sysctl -p
-    check_success "Sysctl configuration"
+    check_success "Configure sysctl"
 }
 
-configure_ntp() {
-    log "INFO" "Configuring NTP..."
-    sed -i 's/pool 0.debian.pool.ntp.org iburst/#pool 0.debian.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 1.debian.pool.ntp.org iburst/#pool 1.debian.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 2.debian.pool.ntp.org iburst/#pool 2.debian.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/pool 3.debian.pool.ntp.org iburst/#pool 3.debian.pool.ntp.org iburst/g' /etc/ntp.conf
-    sed -i 's/restrict -4 default kod notrap nomodify nopeer noquery limited/#restrict -4 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
-    sed -i 's/restrict -6 default kod notrap nomodify nopeer noquery limited/#restrict -6 default kod notrap nomodify nopeer noquery limited/g' /etc/ntp.conf
+configure_fail2ban() {
+    log "INFO" "Configuring Fail2Ban..."
+    apt install -y fail2ban
+    check_success "Install Fail2Ban"
     
-    cat << 'EOL' | tee -a /etc/ntp.conf > /dev/null
-# NTP security settings
-restrict -4 ignore
-restrict -6 ignore
-server 200.160.7.186
-server 201.49.148.135
-server 200.186.125.195
-server 200.20.186.76
-server 200.160.0.8
-server 200.189.40.8
-server 200.192.232.8
-server 200.160.7.193
+    cat << 'EOL' | tee /etc/fail2ban/jail.local > /dev/null
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 3
+ignoreip = 127.0.0.1/8
+
+[sshd]
+enabled = true
+port = 65222
 EOL
     
-    ntpdate -u 200.160.7.186
-    systemctl restart ntp
-    check_success "NTP configuration"
-}
-
-configure_path() {
-    echo 'export PATH=$PATH:/sbin:/usr/sbin' >> ~/.bashrc
-    source ~/.bashrc
-    echo 'export PATH=$PATH:/sbin:/usr/sbin' | tee -a /etc/profile
+    systemctl restart fail2ban
+    check_success "Configure Fail2Ban"
 }
 
 log "INFO" "Starting Debian configuration and hardening..."
@@ -199,8 +215,7 @@ install_packages
 configure_ssh
 configure_motd
 configure_sysctl
-configure_ntp
-configure_path
+configure_fail2ban
 
 log "INFO" "Configuration completed successfully. Rebooting..."
 reboot

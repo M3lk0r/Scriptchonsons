@@ -8,8 +8,8 @@
 #   sudo ./configure-ubuntu.sh
 # Notes
 #   AUTHOR: eduardo.agms@outlook.com.br
-#   VERSION: 2.1
-#   LAST MODIFIED: 21 February 2025
+#   VERSION: 2.2
+#   LAST MODIFIED: 12 March 2025
 
 set -e
 
@@ -32,7 +32,28 @@ check_success() {
     fi
 }
 
-trap 'log "ERROR" "Erro inesperado! Saindo..."' ERR
+rollback() {
+    log "ERROR" "Erro inesperado! Revertendo alterações..."
+    if [ -f "$BACKUP_DIR/ubuntu.sources.bak" ]; then
+        mv "$BACKUP_DIR/ubuntu.sources.bak" /etc/apt/sources.list.d/ubuntu.sources
+    fi
+    if [ -f "$BACKUP_DIR/sshd_config.bak" ]; then
+        mv "$BACKUP_DIR/sshd_config.bak" /etc/ssh/sshd_config
+        systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+    fi
+    if [ -f "$BACKUP_DIR/sysctl.conf.bak" ]; then
+        mv "$BACKUP_DIR/sysctl.conf.bak" /etc/sysctl.conf
+        sysctl --system
+    fi
+    if [ -f "$BACKUP_DIR/jail.local.bak" ]; then
+        mv "$BACKUP_DIR/jail.local.bak" /etc/fail2ban/jail.local
+        systemctl restart fail2ban
+    fi
+    log "INFO" "Rollback concluído."
+    exit 1
+}
+
+trap rollback ERR
 
 if [ "$(id -u)" -ne 0 ]; then
     log "ERROR" "Acesso negado! Execute como root (sudo)."
@@ -41,33 +62,47 @@ fi
 
 configure_firewall() {
     log "INFO" "Configurando firewall..."
+    apt update && apt install ufw -y
+    check_success "Instalação do UFW"
+    
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow 65222/tcp
-    ufw allow 65222/udp
     ufw enable
     ufw reload
+    
+    ufw status | grep -q "Status: active"
     check_success "Configuração do firewall"
 }
 
 configure_sources() {
-    log "INFO" "Configurando repositórios (sources.list)..."
-    cp /etc/apt/sources.list "$BACKUP_DIR/sources.list.bak"
+    log "INFO" "Configurando repositórios..."
+    
+    if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+        cp /etc/apt/sources.list.d/ubuntu.sources "$BACKUP_DIR/ubuntu.sources.bak"
+    fi
+    
+    cat << 'EOL' > /etc/apt/sources.list.d/ubuntu.sources
+Types: deb
+URIs: http://ubuntu.c3sl.ufpr.br/ubuntu
+Suites: noble noble-updates noble-security noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/c3sl-ubuntu-keyring.gpg
 
-    cat << 'EOL' > /etc/apt/sources.list
-# Mirror C3SL/UFPR (Ubuntu 24.04 - Noble Numbat)
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-security main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-updates main restricted universe multiverse
-deb http://ubuntu.c3sl.ufpr.br/ubuntu/ noble-backports main restricted universe multiverse
-
-# Mirror UEPG
-deb https://mirror.uepg.br/ubuntu/ noble main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ noble-updates main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ noble-security main restricted universe multiverse
-deb https://mirror.uepg.br/ubuntu/ noble-backports main restricted universe multiverse
+Types: deb
+URIs: https://mirror.uepg.br/ubuntu
+Suites: noble noble-updates noble-security noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/uepg-ubuntu-keyring.gpg
 EOL
-
+    
+    log "INFO" "Baixando e configurando chaves GPG..."
+    curl -fsSL http://ubuntu.c3sl.ufpr.br/ubuntu/project/ubuntu-archive-keyring.gpg | tee /usr/share/keyrings/c3sl-ubuntu-keyring.gpg > /dev/null
+    curl -fsSL https://mirror.uepg.br/ubuntu/project/ubuntu-archive-keyring.gpg | tee /usr/share/keyrings/uepg-ubuntu-keyring.gpg > /dev/null
+    
+    check_success "Configuração das chaves GPG"
+    
+    apt update
     check_success "Repositórios configurados"
 }
 
@@ -84,22 +119,19 @@ install_packages() {
 }
 
 restart_ssh() {
-    if systemctl list-units --full -all | grep -q sshd.service; then
-        systemctl restart sshd
-    elif systemctl list-units --full -all | grep -q ssh.service; then
-        systemctl restart ssh
+    if systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null; then
+        log "INFO" "Serviço SSH reiniciado com sucesso."
     else
-        log "ERROR" "Neither sshd nor ssh service found!"
-        exit 1
+        log "ERROR" "Falha ao reiniciar o serviço SSH."
+        rollback
     fi
-    check_success "SSH service restart"
 }
 
 configure_ssh() {
-    log "INFO" "Configuring SSH..."
+    log "INFO" "Configurando SSH..."
     cp /etc/ssh/sshd_config "$BACKUP_DIR/sshd_config.bak"
-    check_success "Backup SSH config"
-
+    check_success "Backup do sshd_config"
+    
     sed -i 's/#Port 22/Port 65222/g' /etc/ssh/sshd_config
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/g' /etc/ssh/sshd_config
     sed -i 's/#MaxAuthTries 6/MaxAuthTries 3/g' /etc/ssh/sshd_config
@@ -109,13 +141,19 @@ configure_ssh() {
     sed -i 's/#PrintLastLog/PrintLastLog/g' /etc/ssh/sshd_config
     sed -i '/Port 65222/ i\Protocol 2' /etc/ssh/sshd_config
     sed -i '/PermitRootLogin no/ a\AllowUsers infra' /etc/ssh/sshd_config
-
+    
     restart_ssh
+    
+    ss -tuln | grep -q ":65222"
+    check_success "Configuração do SSH"
 }
 
 configure_motd() {
     log "INFO" "Configurando mensagem de login (MOTD)..."
-    cat << 'EOL' > /etc/motd
+    
+    cat << 'EOL' | sudo tee /etc/update-motd.d/99-custom-motd > /dev/null
+#!/bin/bash
+cat << 'EOF'
 
 ####################################################
 #     _____            _                           #
@@ -129,20 +167,24 @@ configure_motd() {
 # Acesso Restrito e Monitorado!                    #
 #                                                  #
 ####################################################
+
+EOF
 EOL
+    
+    sudo chmod -x /etc/update-motd.d/*
+    sudo chmod +x /etc/update-motd.d/99-custom-motd
+    run-parts /etc/update-motd.d/
     check_success "Configuração do MOTD"
 }
 
 configure_sysctl() {
     log "INFO" "Configurando parâmetros de segurança (sysctl)..."
     cp /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak"
-
-    cat << 'EOL' | tee /etc/sysctl.conf > /dev/null
     
+    cat << 'EOL' | tee /etc/sysctl.conf > /dev/null
 # Security settings
 kernel.core_uses_pid = 1
-kernel.exec-shield = 1
-kernel.randomize_va_space = 1
+kernel.randomize_va_space = 2
 fs.file-max = 65535
 kernel.pid_max = 65536
 net.ipv4.ip_forward = 0
@@ -166,7 +208,7 @@ net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOL
-
+    
     sysctl --system
     check_success "Configuração do sysctl"
 }
@@ -174,7 +216,7 @@ EOL
 configure_ntp() {
     log "INFO" "Configurando NTP..."
     cp /etc/ntp.conf "$BACKUP_DIR/ntp.conf.bak"
-
+    
     cat << 'EOL' > /etc/ntp.conf
 # Configuração de servidores NTP confiáveis
 server 200.160.7.186 iburst
@@ -183,15 +225,27 @@ server 200.186.125.195 iburst
 server 200.20.186.76 iburst
 server 200.160.0.8 iburst
 EOL
-
+    
     systemctl restart ntp
     check_success "Configuração do NTP"
 }
 
 configure_fail2ban() {
     log "INFO" "Configurando Fail2Ban..."
-    cp /etc/fail2ban/jail.local "$BACKUP_DIR/jail.local.bak" || touch /etc/fail2ban/jail.local
-
+    
+    if ! command -v fail2ban-client &> /dev/null; then
+        apt install -y fail2ban
+        check_success "Instalação do Fail2Ban"
+    fi
+    
+    if [ -f /etc/fail2ban/jail.local ]; then
+        cp /etc/fail2ban/jail.local "$BACKUP_DIR/jail.local.bak"
+        check_success "Backup do jail.local"
+    else
+        touch /etc/fail2ban/jail.local
+        check_success "Criação do jail.local"
+    fi
+    
     cat << 'EOL' > /etc/fail2ban/jail.local
 [DEFAULT]
 bantime = 3600
@@ -203,9 +257,19 @@ ignoreip = 127.0.0.1/8
 enabled = true
 port = 65222
 EOL
-
+    
+    if [ ! -f /etc/fail2ban/jail.local ]; then
+        log "ERROR" "Falha ao criar /etc/fail2ban/jail.local"
+        rollback
+    fi
+    
     systemctl restart fail2ban
-    check_success "Configuração do Fail2Ban"
+    check_success "Reinício do Fail2Ban"
+    
+    systemctl is-active --quiet fail2ban
+    check_success "Fail2Ban está ativo"
+    
+    log "INFO" "Fail2Ban configurado com sucesso."
 }
 
 log "INFO" "Iniciando configuração do servidor Ubuntu 24.04..."
