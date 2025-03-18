@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Synopsis
-#   Instala e configura o NGINX como proxy reverso com melhores práticas de segurança.
+#   Configura o NGINX como proxy reverso com melhores práticas de segurança.
 # Description
-#   Este script instala o NGINX, configura suporte a HTTP/HTTPS, e define as melhores práticas para proxy reverso.
+#   Este script configura NGINX, define as melhores práticas para proxy reverso.
 #   Inclui instalação de ModSecurity, bloqueio de bots, configuração de GeoIP e aplicação de regras de segurança.
 # Example
 #   sudo ./configure-secure-nginx.sh
