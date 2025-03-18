@@ -49,29 +49,29 @@ install_nginx() {
 
 configure_firewall() {
     log "INFO" "Configurando o firewall..."
-
+    
     if ! ufw status | grep -q "Status: active"; then
         log "ERROR" "O UFW não está ativo. Ative o UFW antes de continuar."
         exit 1
     fi
-
+    
     if ! ufw status | grep -q "80/tcp"; then
         log "INFO" "Adicionando regra para a porta 80/tcp..."
         ufw allow 80/tcp
     else
         log "INFO" "A regra para a porta 80/tcp já existe."
     fi
-
+    
     if ! ufw status | grep -q "443/tcp"; then
         log "INFO" "Adicionando regra para a porta 443/tcp..."
         ufw allow 443/tcp
     else
         log "INFO" "A regra para a porta 443/tcp já existe."
     fi
-
+    
     ufw reload
     check_success "Recarregamento do UFW"
-
+    
     log "INFO" "Configuração do firewall concluída com sucesso!"
 }
 
@@ -80,14 +80,14 @@ convert_pfx_to_crt_key() {
     local pfx_password="$2"
     local crt_file="$3"
     local key_file="$4"
-
+    
     log "INFO" "Convertendo o arquivo .pfx para .crt e .key..."
     openssl pkcs12 -in "$pfx_file" -out "$crt_file" -clcerts -nokeys -password "pass:$pfx_password"
     check_success "Extraindo o certificado (.crt) do .pfx"
-
+    
     openssl pkcs12 -in "$pfx_file" -out "$key_file" -nocerts -nodes -password "pass:$pfx_password"
     check_success "Extraindo a chave privada (.key) do .pfx"
-
+    
     log "INFO" "Conversão concluída com sucesso!"
 }
 
@@ -95,17 +95,17 @@ create_fullchain() {
     local server_cert="$1"
     local chain_cert="$2"
     local fullchain_file="$3"
-
+    
     log "INFO" "Criando arquivo fullchain.pem..."
     cat "$server_cert" "$chain_cert" > "$fullchain_file"
     check_success "Criação do fullchain.pem"
-
+    
     log "INFO" "Fullchain.pem criado com sucesso em: $fullchain_file"
 }
 
 configure_http_https() {
     log "INFO" "Configurando suporte a HTTP/HTTPS..."
-
+    
     read -p "Deseja configurar HTTPS? (s/n): " USE_HTTPS
     if [[ "$USE_HTTPS" == "s" || "$USE_HTTPS" == "S" ]]; then
         read -p "Usar Let's Encrypt para gerar certificados? (s/n): " USE_LETSENCRYPT
@@ -113,10 +113,10 @@ configure_http_https() {
             log "INFO" "Instalando Certbot para Let's Encrypt..."
             apt-get install -y certbot python3-certbot-nginx
             check_success "Instalação do Certbot"
-
+            
             read -p "Digite o server_name (ex: exemplo.com): " SERVER_NAME
             log "INFO" "Configurando NGINX para o desafio do Let's Encrypt..."
-
+            
             TEMP_CONFIG="/etc/nginx/sites-available/letsencrypt-challenge"
             cat << EOL > "$TEMP_CONFIG"
 server {
@@ -133,15 +133,15 @@ server {
     }
 }
 EOL
-
+            
             ln -sf "$TEMP_CONFIG" "/etc/nginx/sites-enabled/letsencrypt-challenge"
             systemctl reload nginx
             check_success "Recarregamento do NGINX para o desafio do Let's Encrypt"
-
+            
             log "INFO" "Gerando certificado Let's Encrypt para $SERVER_NAME..."
             certbot --nginx -d "$SERVER_NAME" --non-interactive --agree-tos --email admin@$SERVER_NAME
             check_success "Geração do certificado Let's Encrypt"
-
+            
             rm -f "$TEMP_CONFIG" "/etc/nginx/sites-enabled/letsencrypt-challenge"
             systemctl reload nginx
             log "INFO" "Configuração temporária do desafio removida."
@@ -151,45 +151,45 @@ EOL
                 read -p "Digite o caminho completo para o arquivo .pfx: " PFX_FILE
                 read -s -p "Digite a senha do arquivo .pfx: " PFX_PASSWORD
                 echo
-
+                
                 if [[ ! -f "$PFX_FILE" ]]; then
                     log "ERROR" "Arquivo .pfx não encontrado!"
                     exit 1
                 fi
-
+                
                 CERT_DIR="/etc/nginx/ssl"
                 mkdir -p "$CERT_DIR"
                 CRT_FILE="$CERT_DIR/$SERVER_NAME.crt"
                 KEY_FILE="$CERT_DIR/$SERVER_NAME.key"
-
+                
                 convert_pfx_to_crt_key "$PFX_FILE" "$PFX_PASSWORD" "$CRT_FILE" "$KEY_FILE"
-
+                
                 read -p "Digite o caminho completo para o arquivo chain.pem (certificado intermediário): " CHAIN_FILE
                 if [[ ! -f "$CHAIN_FILE" ]]; then
                     log "ERROR" "Arquivo chain.pem não encontrado!"
                     exit 1
                 fi
-
+                
                 FULLCHAIN_FILE="$CERT_DIR/$SERVER_NAME-fullchain.pem"
                 create_fullchain "$CRT_FILE" "$CHAIN_FILE" "$FULLCHAIN_FILE"
-
+                
                 SSL_CERT="$FULLCHAIN_FILE"
                 SSL_KEY="$KEY_FILE"
             else
                 read -p "Digite o caminho completo para o certificado do servidor (.crt): " SERVER_CERT
                 read -p "Digite o caminho completo para o certificado chain.pem (intermediário): " CHAIN_CERT
                 read -p "Digite o caminho completo para a chave privada SSL existente (.key): " SSL_KEY
-
+                
                 if [[ ! -f "$SERVER_CERT" || ! -f "$CHAIN_CERT" || ! -f "$SSL_KEY" ]]; then
                     log "ERROR" "Certificado ou chave privada não encontrados!"
                     exit 1
                 fi
-
+                
                 CERT_DIR="/etc/nginx/ssl"
                 mkdir -p "$CERT_DIR"
                 FULLCHAIN_FILE="$CERT_DIR/$SERVER_NAME-fullchain.pem"
                 create_fullchain "$SERVER_CERT" "$CHAIN_CERT" "$FULLCHAIN_FILE"
-
+                
                 SSL_CERT="$FULLCHAIN_FILE"
             fi
         fi
@@ -198,14 +198,14 @@ EOL
 
 create_nginx_proxy_config() {
     log "INFO" "Criando arquivo de configuração do proxy reverso..."
-
+    
     read -p "Digite o nome do arquivo de configuração (ex: meu-proxy): " CONFIG_NAME
     read -p "Digite o server_name (ex: exemplo.com): " SERVER_NAME
     read -p "Digite o endereço de destino (backend) (ex: http://192.168.1.100:8080): " BACKEND_ADDRESS
-
+    
     CONFIG_FILE="/etc/nginx/sites-available/$CONFIG_NAME"
     CONFIG_LINK="/etc/nginx/sites-enabled/$CONFIG_NAME"
-
+    
     log "INFO" "Criando arquivo de configuração: $CONFIG_FILE..."
     cat << EOL > "$CONFIG_FILE"
 # Configuração de proxy reverso para $SERVER_NAME
@@ -245,17 +245,24 @@ $(if [[ "$USE_HTTPS" == "s" || "$USE_HTTPS" == "S" ]]; then
     echo "        proxy_set_header X-Real-IP \$remote_addr;"
     echo "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;"
     echo "        proxy_set_header X-Forwarded-Proto \$scheme;"
+    echo "        proxy_set_header X-Forwarded-Host \$host;"
+    echo "        proxy_set_header X-Forwarded-Server \$host;"
     echo "        proxy_connect_timeout 60s;"
     echo "        proxy_read_timeout 60s;"
     echo "        proxy_send_timeout 60s;"
     echo "        proxy_buffer_size 128k;"
     echo "        proxy_buffers 4 256k;"
     echo "        proxy_busy_buffers_size 256k;"
+    echo ""
+    echo "        # Suporte a WebSockets"
+    echo "        proxy_http_version 1.1;"
+    echo "        proxy_set_header Upgrade \$http_upgrade;"
+    echo "        proxy_set_header Connection "upgrade";"
     echo "    }"
     echo "}"
 fi)
 EOL
-
+    
     ln -sf "$CONFIG_FILE" "$CONFIG_LINK"
     check_success "Criação do arquivo de configuração"
 }
@@ -264,7 +271,7 @@ test_and_restart_nginx() {
     log "INFO" "Testando configuração do NGINX..."
     nginx -t
     check_success "Teste de configuração do NGINX"
-
+    
     log "INFO" "Reiniciando NGINX..."
     systemctl restart nginx
     check_success "Reinicialização do NGINX"
@@ -272,14 +279,14 @@ test_and_restart_nginx() {
 
 configure_auto_renewal() {
     log "INFO" "Configurando renovação automática do certificado Let's Encrypt..."
-
+    
     if ! command -v certbot &> /dev/null; then
         log "ERROR" "Certbot não está instalado. Instale o Certbot antes de configurar a renovação automática."
         exit 1
     fi
-
+    
     CRON_JOB="0 0 * * * /usr/bin/certbot renew --quiet --post-hook \"systemctl reload nginx\""
-
+    
     if ! crontab -l | grep -q "$CRON_JOB"; then
         log "INFO" "Adicionando cron job para renovação automática..."
         (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
@@ -287,30 +294,30 @@ configure_auto_renewal() {
     else
         log "INFO" "O cron job para renovação automática já está configurado."
     fi
-
+    
     log "INFO" "Renovação automática configurada com sucesso!"
 }
 
 main() {
     log "INFO" "Iniciando instalação e configuração do NGINX como proxy reverso..."
-
+    
     if ! command -v nginx &> /dev/null; then
         install_nginx
     else
         log "INFO" "NGINX já está instalado."
     fi
-
+    
     configure_firewall
     configure_http_https
     create_nginx_proxy_config
     test_and_restart_nginx
-
+    
     log "INFO" "Configuração do NGINX como proxy reverso concluída com sucesso!"
     log "INFO" "Acesse o proxy em: http://$SERVER_NAME"
     if [[ "$USE_HTTPS" == "s" || "$USE_HTTPS" == "S" ]]; then
         log "INFO" "Acesse o proxy seguro em: https://$SERVER_NAME"
     fi
-
+    
     if [[ "$USE_HTTPS" == "s" || "$USE_HTTPS" == "S" ]]; then
         if [[ "$USE_LETSENCRYPT" == "s" || "$USE_LETSENCRYPT" == "S" ]]; then
             configure_auto_renewal
