@@ -7,7 +7,7 @@
    Inclui configurações adicionais para CIS Benchmark Level 1 e recomendações da Microsoft.
 .NOTES
    FileName    : Hardening-WindowsServer2025.ps1
-   Author      : [Your Name]
+   Author      : Eduardo Augusto Gomes
    Version     : 2.0
    Tested OS   : Windows Server 2025
    Requisitos  : PowerShell 5.1+, Executar como Administrador
