@@ -1,17 +1,15 @@
-<#
+﻿<#
 .SYNOPSIS
     Script para instalação e configuração de um controlador de domínio primário (AD DS) no Windows Server 2025 Core.
 .DESCRIPTION
     Este script automatiza a instalação do AD DS em Server Core, configura um novo domínio contoso.com.br,
     define o nível funcional do domínio e floresta para Windows Server 2025 (10).
 .EXAMPLE
-    .\InstallADDSPrimary.ps11
+    .\InstallADDSPrimary.ps1
 .NOTES
     Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
     Data: 02/05/2025
     Versão: 1.0
-        - Adicionado log da origem das atualizações (WSUS ou Microsoft Update)
-        - Melhorias na exibição e organização do código
 .LINK
     https://github.com/M3lk0r/Powershellson
 #>

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Cria estrutura organizacional completa, usuários e grupos em domínio Active Directory.
 .DESCRIPTION
@@ -7,10 +7,16 @@
     - Grupos de segurança organizacionais
     - Usuários de teste para laboratório
     - Configurações básicas de permissões
+.EXAMPLE
+    .\Create-ADLabStructure.ps1
 .NOTES
-    File Name      : Create-ADLabStructure.ps1
+    Autor: Eduardo Augusto Gomes (eduardo.agms@outlook.com.br)
+    Data: 02/05/2025
     Prerequisite   : Windows Server 2025 Core com AD DS instalado
-    Version        : 1.0
+    Versão: 1.0
+.LINK
+    https://github.com/M3lk0r/Powershellson
+#>
 #>
 
 # Verificar se o módulo do AD está disponível
@@ -85,20 +91,25 @@ New-ProtectedOU -Name "Infra" -Path $servidoresPath -Description "Infraestrutura
 Write-Host "`nCriando grupos de segurança..." -ForegroundColor Cyan
 
 $groups = @(
-    @{Name="GRP-TI-Admins"; Description="Administradores de TI"; Path="OU=TI,$departamentosPath"; GroupCategory="Security"; GroupScope="Global"},
-    @{Name="GRP-TI-Helpdesk"; Description="Equipe de Helpdesk"; Path="OU=TI,$departamentosPath"; GroupCategory="Security"; GroupScope="Global"},
-    @{Name="GRP-Fin-Contabilidade"; Description="Equipe de Contabilidade"; Path="OU=Financeiro,$departamentosPath"; GroupCategory="Security"; GroupScope="Global"},
-    @{Name="GRP-RH-Gestao"; Description="Gestão de RH"; Path="OU=RH,$departamentosPath"; GroupCategory="Security"; GroupScope="Global"},
-    @{Name="GRP-FileServer-Read"; Description="Acesso leitura File Server"; Path="OU=FileServers,$servidoresPath"; GroupCategory="Security"; GroupScope="DomainLocal"},
-    @{Name="GRP-FileServer-Write"; Description="Acesso escrita File Server"; Path="OU=FileServers,$servidoresPath"; GroupCategory="Security"; GroupScope="DomainLocal"},
-    @{Name="GRP-ERP-Users"; Description="Usuários do ERP"; Path="OU=ERP,$aplicacoesPath"; GroupCategory="Security"; GroupScope="Global"},
-    @{Name="GRP-CRM-Users"; Description="Usuários do CRM"; Path="OU=CRM,$aplicacoesPath"; GroupCategory="Security"; GroupScope="Global"}
+    @{Name = "GRP-TI-Admins"; Description = "Administradores de TI"; Path = "OU=TI,$departamentosPath"; GroupCategory = "Security"; GroupScope = "Global" },
+    @{Name = "GRP-TI-Helpdesk"; Description = "Equipe de Helpdesk"; Path = "OU=TI,$departamentosPath"; GroupCategory = "Security"; GroupScope = "Global" },
+    @{Name = "GRP-Fin-Contabilidade"; Description = "Equipe de Contabilidade"; Path = "OU=Financeiro,$departamentosPath"; GroupCategory = "Security"; GroupScope = "Global" },
+    @{Name = "GRP-RH-Gestao"; Description = "Gestão de RH"; Path = "OU=RH,$departamentosPath"; GroupCategory = "Security"; GroupScope = "Global" },
+    @{Name = "GRP-FileServer-Read"; Description = "Acesso leitura File Server"; Path = "OU=FileServers,$servidoresPath"; GroupCategory = "Security"; GroupScope = "DomainLocal" },
+    @{Name = "GRP-FileServer-Write"; Description = "Acesso escrita File Server"; Path = "OU=FileServers,$servidoresPath"; GroupCategory = "Security"; GroupScope = "DomainLocal" },
+    @{Name = "GRP-ERP-Users"; Description = "Usuários do ERP"; Path = "OU=ERP,$aplicacoesPath"; GroupCategory = "Security"; GroupScope = "Global" },
+    @{Name = "GRP-CRM-Users"; Description = "Usuários do CRM"; Path = "OU=CRM,$aplicacoesPath"; GroupCategory = "Security"; GroupScope = "Global" }
 )
 
 foreach ($group in $groups) {
-    if (-not (Get-ADGroup -Filter {Name -eq $group.Name} -ErrorAction SilentlyContinue)) {
-        New-ADGroup @group
-        Write-Host "Grupo criado: $($group.Name)" -ForegroundColor Green
+    if (-not (Get-ADGroup -Filter "Name -eq '$($group.Name)'" -ErrorAction SilentlyContinue)) {
+        try {
+            New-ADGroup @group
+            Write-Host "Grupo criado: $($group.Name)" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Erro ao criar grupo: $($group.Name) - $_" -ForegroundColor Red
+        }
     }
     else {
         Write-Host "Grupo já existe: $($group.Name)" -ForegroundColor Yellow
@@ -109,27 +120,27 @@ foreach ($group in $groups) {
 Write-Host "`nCriando usuários de laboratório..." -ForegroundColor Cyan
 
 $users = @(
-    @{GivenName="Admin"; Surname="TI"; Name="ti.admin"; SamAccountName="ti.admin"; Path="OU=TI,$departamentosPath"; Description="Administrador de TI"; Groups=@("GRP-TI-Admins","Domain Admins")},
-    @{GivenName="Helpdesk"; Surname="TI"; Name="ti.helpdesk"; SamAccountName="ti.helpdesk"; Path="OU=TI,$departamentosPath"; Description="Técnico de Helpdesk"; Groups=@("GRP-TI-Helpdesk")},
-    @{GivenName="Gerente"; Surname="Financeiro"; Name="fin.gerente"; SamAccountName="fin.gerente"; Path="OU=Financeiro,$departamentosPath"; Description="Gerente Financeiro"; Groups=@("GRP-Fin-Contabilidade")},
-    @{GivenName="Analista"; Surname="RH"; Name="rh.analista"; SamAccountName="rh.analista"; Path="OU=RH,$departamentosPath"; Description="Analista de RH"; Groups=@("GRP-RH-Gestao")},
-    @{GivenName="Usuario"; Surname="ERP"; Name="erp.user"; SamAccountName="erp.user"; Path="OU=ERP,$aplicacoesPath"; Description="Usuário do ERP"; Groups=@("GRP-ERP-Users")},
-    @{GivenName="Usuario"; Surname="CRM"; Name="crm.user"; SamAccountName="crm.user"; Path="OU=CRM,$aplicacoesPath"; Description="Usuário do CRM"; Groups=@("GRP-CRM-Users")},
-    @{GivenName="Terceiro"; Surname="Consultor"; Name="terceiro.consultor"; SamAccountName="terceiro.consultor"; Path="OU=Terceiros,$empresaPath"; Description="Consultor Externo"; Groups=@()}
+    @{GivenName = "Admin"; Surname = "TI"; Name = "ti.admin"; SamAccountName = "ti.admin"; Path = "OU=TI,$departamentosPath"; Description = "Administrador de TI"; Groups = @("GRP-TI-Admins", "Domain Admins") },
+    @{GivenName = "Helpdesk"; Surname = "TI"; Name = "ti.helpdesk"; SamAccountName = "ti.helpdesk"; Path = "OU=TI,$departamentosPath"; Description = "Técnico de Helpdesk"; Groups = @("GRP-TI-Helpdesk") },
+    @{GivenName = "Gerente"; Surname = "Financeiro"; Name = "fin.gerente"; SamAccountName = "fin.gerente"; Path = "OU=Financeiro,$departamentosPath"; Description = "Gerente Financeiro"; Groups = @("GRP-Fin-Contabilidade") },
+    @{GivenName = "Analista"; Surname = "RH"; Name = "rh.analista"; SamAccountName = "rh.analista"; Path = "OU=RH,$departamentosPath"; Description = "Analista de RH"; Groups = @("GRP-RH-Gestao") },
+    @{GivenName = "Usuario"; Surname = "ERP"; Name = "erp.user"; SamAccountName = "erp.user"; Path = "OU=ERP,$aplicacoesPath"; Description = "Usuário do ERP"; Groups = @("GRP-ERP-Users") },
+    @{GivenName = "Usuario"; Surname = "CRM"; Name = "crm.user"; SamAccountName = "crm.user"; Path = "OU=CRM,$aplicacoesPath"; Description = "Usuário do CRM"; Groups = @("GRP-CRM-Users") },
+    @{GivenName = "Terceiro"; Surname = "Consultor"; Name = "terceiro.consultor"; SamAccountName = "terceiro.consultor"; Path = "OU=Terceiros,$empresaPath"; Description = "Consultor Externo"; Groups = @() }
 )
 
 foreach ($user in $users) {
-    if (-not (Get-ADUser -Filter {SamAccountName -eq $user.SamAccountName} -ErrorAction SilentlyContinue)) {
+    if (-not (Get-ADUser -Filter "SamAccountName -eq '$($user.SamAccountName)'" -ErrorAction SilentlyContinue)) {
         $newUserParams = @{
-            GivenName       = $user.GivenName
-            Surname         = $user.Surname
-            Name            = $user.Name
-            SamAccountName  = $user.SamAccountName
-            UserPrincipalName = "$($user.SamAccountName)$UserPrincipalNameSuffix"
-            Path            = $user.Path
-            AccountPassword = $DefaultPassword
-            Enabled         = $true
-            Description     = $user.Description
+            GivenName             = $user.GivenName
+            Surname               = $user.Surname
+            Name                  = $user.Name
+            SamAccountName        = $user.SamAccountName
+            UserPrincipalName     = "$($user.SamAccountName)$UserPrincipalNameSuffix"
+            Path                  = $user.Path
+            AccountPassword       = $DefaultPassword
+            Enabled               = $true
+            Description           = $user.Description
             ChangePasswordAtLogon = $true
         }
         
@@ -139,49 +150,26 @@ foreach ($user in $users) {
         # Adicionar aos grupos especificados
         foreach ($group in $user.Groups) {
             try {
-                Add-ADGroupMember -Identity $group -Members $user.SamAccountName
-                Write-Host "  - Adicionado ao grupo: $group" -ForegroundColor DarkGreen
+                if (Get-ADGroup -Filter "Name -eq '$group'" -ErrorAction SilentlyContinue) {
+                    Add-ADGroupMember -Identity $group -Members $user.SamAccountName
+                    Write-Host "  - Adicionado ao grupo: $group" -ForegroundColor DarkGreen
+                }
+                else {
+                    Write-Host "  - Grupo não encontrado: $group" -ForegroundColor DarkYellow
+                }
             }
             catch {
                 Write-Host "  - ERRO ao adicionar ao grupo $($group): $_" -ForegroundColor Red
             }
         }
+
     }
     else {
         Write-Host "Usuário já existe: $($user.SamAccountName)" -ForegroundColor Yellow
     }
 }
 
-# 4. Configurar permissões básicas
-Write-Host "`nConfigurando permissões básicas..." -ForegroundColor Cyan
-
-# Delegar controle da OU de TI para o grupo GRP-TI-Admins
-$tiOU = "OU=TI,$departamentosPath"
-$tiAdmins = "GRP-TI-Admins"
-
-try {
-    $guidMap = @{
-        "ResetPass" = "00299570-246d-11d0-a768-00aa006e0529"
-        "CreateDeleteUsers" = "ab721a53-1e2f-11d0-9819-00aa0040529b"
-        "ManageGroups" = "ab721a54-1e2f-11d0-9819-00aa0040529b"
-    }
-
-    # Permissão para resetar senhas
-    Add-ADPermission -Identity $tiOU -User (Get-ADGroup $tiAdmins).SID -AccessRights ExtendedRight -ExtendedRights $guidMap.ResetPass
-    
-    # Permissão para criar/remover usuários
-    Add-ADPermission -Identity $tiOU -User (Get-ADGroup $tiAdmins).SID -AccessRights CreateChild, DeleteChild -ChildType "user"
-    
-    # Permissão para gerenciar grupos
-    Add-ADPermission -Identity $tiOU -User (Get-ADGroup $tiAdmins).SID -AccessRights WriteProperty -PropertyType "Member"
-    
-    Write-Host "Permissões delegadas para GRP-TI-Admins na OU de TI" -ForegroundColor Green
-}
-catch {
-    Write-Host "Erro ao configurar permissões: $_" -ForegroundColor Red
-}
-
-# 5. Configuração final
+# 4. Configuração final
 Write-Host "`nConfiguração completa!" -ForegroundColor Green
 Write-Host "Estrutura criada:" -ForegroundColor Cyan
 Get-ADOrganizationalUnit -Filter * -SearchScope Subtree | Sort-Object DistinguishedName | Format-Table Name, DistinguishedName -AutoSize
